@@ -7,7 +7,7 @@
   },
   "scripts": {
     "build:ui": "bun build src/ui/index.tsx --outdir dist --bundle --minify && cp src/ui/index.html dist/index.html",
-    "dev": "bun run src/cli.ts"
+    "dev": "bun run build:ui && bun run src/cli.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",
