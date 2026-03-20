@@ -73,6 +73,7 @@ Parse incoming multipart message → dispatch on `msg_type`:
 - `is_complete_request` → reply with `{ status: "complete" }` (always; no multi-line detection)
 - `complete_request` → reply with empty matches `{ matches: [], cursor_start: 0, cursor_end: 0, status: "ok" }` (stub)
 - `comm_info_request` → reply with `{ comms: {} }` (no comms support)
+- Unrecognized message types are silently dropped
 
 ### Execute Request Flow
 
