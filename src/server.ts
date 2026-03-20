@@ -24,6 +24,13 @@ export async function startServer(filePath: string, port: number = 3000) {
 
   const distDir = resolve(import.meta.dirname!, "../dist");
 
+  const CONTENT_TYPES: Record<string, string> = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".json": "application/json",
+  };
+
   const server = Bun.serve({
     port,
     fetch(req, server) {
@@ -34,16 +41,20 @@ export async function startServer(filePath: string, port: number = 3000) {
       }
       // Serve static files from dist/
       if (url.pathname !== "/" && !url.pathname.startsWith("/api/")) {
-        const filePath = resolve(distDir, url.pathname.slice(1));
+        const safePath = url.pathname.slice(1).replace(/\.\./g, "");
+        const filePath = resolve(distDir, safePath);
+        const ext = safePath.substring(safePath.lastIndexOf("."));
+        const contentType = CONTENT_TYPES[ext] || "application/octet-stream";
         const file = Bun.file(filePath);
-        return new Response(file);
+        return new Response(file, {
+          headers: { "Content-Type": contentType },
+        });
       }
       return undefined;
     },
     routes: {
       "/": async () => {
-        const html = await Bun.file(resolve(distDir, "index.html")).text();
-        return new Response(html, {
+        return new Response(Bun.file(resolve(distDir, "index.html")), {
           headers: { "Content-Type": "text/html; charset=utf-8" },
         });
       },
