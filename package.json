@@ -12,7 +12,5 @@
   "peerDependencies": {
     "typescript": "^5"
   },
-  "dependencies": {
-    "zeromq": "^6.5.0"
-  }
+  "dependencies": {}
 }
