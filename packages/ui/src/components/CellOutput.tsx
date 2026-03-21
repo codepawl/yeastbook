@@ -3,6 +3,11 @@ import { DataTable } from "./outputs/DataTable.tsx";
 import { ChartOutput } from "./outputs/ChartOutput.tsx";
 import { HtmlOutput } from "./outputs/HtmlOutput.tsx";
 import { PluginRenderer } from "./outputs/PluginRenderer.tsx";
+import { MimeOutput } from "./outputs/MimeOutput.tsx";
+import { SliderWidget } from "./widgets/SliderWidget.tsx";
+import { InputWidget } from "./widgets/InputWidget.tsx";
+import { ToggleWidget } from "./widgets/ToggleWidget.tsx";
+import { SelectWidget } from "./widgets/SelectWidget.tsx";
 import type { CellOutput as CellOutputType } from "@yeastbook/core";
 
 interface Props {
@@ -64,6 +69,21 @@ function RichOutputRenderer({ output }: { output: NonNullable<CellOutputType["ri
       return <div className="output-result">{output.text}</div>;
     case "plugin":
       return <PluginRenderer pluginType={(output as any).pluginType} data={(output as any).data} />;
+    case "mime":
+      return <MimeOutput mime={(output as any).mime} data={(output as any).data} url={(output as any).url} />;
+    case "widget": {
+      const w = output as any;
+      const onUpdate = (widgetId: string, value: unknown) => {
+        window.dispatchEvent(new CustomEvent("widget-update", { detail: { widgetId, value } }));
+      };
+      switch (w.widgetType) {
+        case "slider": return <SliderWidget widgetId={w.widgetId} config={w.config} value={w.value} onUpdate={onUpdate} />;
+        case "input": return <InputWidget widgetId={w.widgetId} config={w.config} value={w.value} onUpdate={onUpdate} />;
+        case "toggle": return <ToggleWidget widgetId={w.widgetId} config={w.config} value={w.value} onUpdate={onUpdate} />;
+        case "select": return <SelectWidget widgetId={w.widgetId} config={w.config} value={w.value} onUpdate={onUpdate} />;
+        default: return <div className="output-result">Unknown widget: {w.widgetType}</div>;
+      }
+    }
     default:
       return null;
   }

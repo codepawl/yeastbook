@@ -4,7 +4,9 @@ export type RichOutput =
   | { type: "table"; rows: Record<string, unknown>[] }
   | { type: "chart"; data: unknown[]; config: { chartType: string; xKey?: string; yKey?: string; label?: string; title?: string } }
   | { type: "html"; html: string }
-  | { type: "plugin"; pluginType: string; data: Record<string, unknown> };
+  | { type: "plugin"; pluginType: string; data: Record<string, unknown> }
+  | { type: "mime"; mime: string; data?: string; url?: string }
+  | { type: "widget"; widgetId: string; widgetType: string; value: unknown; config: Record<string, unknown> };
 
 export interface CellOutput {
   output_type: string;
@@ -51,12 +53,17 @@ export interface Settings {
     autoSaveOnRun: boolean;
     clearOutputBeforeRun: boolean;
   };
+  ai: {
+    provider: "anthropic" | "openai" | "disabled";
+    apiKey: string;
+  };
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   editor: { fontSize: 13, tabSize: 2, wordWrap: false },
   appearance: { theme: "light" },
   execution: { autoSaveOnRun: true, clearOutputBeforeRun: false },
+  ai: { provider: "disabled", apiKey: "" },
 };
 
 export type WsOutgoing =
@@ -73,4 +80,5 @@ export type WsIncoming =
   | { type: "install_log"; cellId: string; text: string; stream: "stdout" | "stderr" }
   | { type: "install_done"; cellId: string; success: true; packageDts?: Record<string, string> }
   | { type: "install_error"; cellId: string; error: string }
-  | { type: "notebook_updated" };
+  | { type: "notebook_updated" }
+  | { type: "auto_saved" };

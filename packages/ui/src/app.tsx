@@ -1,9 +1,12 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { NotebookView } from "./components/NotebookView.tsx";
 import { EditableFileName } from "./components/EditableFileName.tsx";
 import { SettingsPanel } from "./components/SettingsPanel.tsx";
 import { MenuBar, ShortcutsModal, AboutModal } from "./components/MenuBar.tsx";
+import { StatusBar } from "./components/StatusBar.tsx";
+import { CommandPalette } from "./components/CommandPalette.tsx";
 import { useWebSocket } from "./useWebSocket.ts";
+import { useKeyboardShortcuts, type Mode } from "./hooks/useKeyboardShortcuts.ts";
 import type { Cell, CellOutput, WsIncoming, Settings } from "@yeastbook/core";
 import { DEFAULT_SETTINGS } from "@yeastbook/core";
 
@@ -31,7 +34,9 @@ export function App() {
   const [toast, setToast] = useState<string | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [installStates, setInstallStates] = useState<Map<string, { packages: string[]; logs: string[]; done: boolean; error?: string }>>(new Map());
+  const [mode, setMode] = useState<Mode>("command");
   const runAllResolveRef = useRef<(() => void) | null>(null);
 
   const showToast = useCallback((msg: string) => {
@@ -223,6 +228,10 @@ export function App() {
           if (data.fileFormat) setFileFormat(data.fileFormat);
         });
         break;
+      case "auto_saved":
+        setSaved(true);
+        showToast("Auto-saved");
+        break;
     }
   }, [showToast]);
 
@@ -376,17 +385,99 @@ export function App() {
     showToast("Saved");
   }, [showToast]);
 
-  // --- Ctrl+S ---
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
-        e.preventDefault();
-        handleSave();
+  // --- Keyboard shortcut handlers ---
+  const handleAddCellAbove = useCallback(async () => {
+    if (!focusedCellId) return;
+    const res = await fetch("/api/cells/insert", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "code", source: "", afterId: undefined }),
+    });
+    const { id } = await res.json();
+    const cell: Cell = { id, cell_type: "code", source: [], outputs: [], execution_count: null, metadata: {} };
+    setCells((prev) => {
+      const idx = prev.findIndex((c) => c.id === focusedCellId);
+      if (idx > 0) {
+        const next = [...prev];
+        next.splice(idx, 0, cell);
+        return next;
       }
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [handleSave]);
+      return [cell, ...prev];
+    });
+  }, [focusedCellId]);
+
+  const handleAddCellBelow = useCallback(async () => {
+    const afterId = focusedCellId || undefined;
+    const res = await fetch("/api/cells/insert", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "code", source: "", afterId }),
+    });
+    const { id } = await res.json();
+    const cell: Cell = { id, cell_type: "code", source: [], outputs: [], execution_count: null, metadata: {} };
+    setCells((prev) => {
+      if (afterId) {
+        const idx = prev.findIndex((c) => c.id === afterId);
+        if (idx !== -1) {
+          const next = [...prev];
+          next.splice(idx + 1, 0, cell);
+          return next;
+        }
+      }
+      return [...prev, cell];
+    });
+    setFocusedCellId(id);
+  }, [focusedCellId]);
+
+  const handleFocusPrev = useCallback(() => {
+    setCells((prev) => {
+      const idx = prev.findIndex((c) => c.id === focusedCellId);
+      if (idx > 0) setFocusedCellId(prev[idx - 1].id);
+      return prev;
+    });
+  }, [focusedCellId]);
+
+  const handleFocusNext = useCallback(() => {
+    setCells((prev) => {
+      const idx = prev.findIndex((c) => c.id === focusedCellId);
+      if (idx >= 0 && idx < prev.length - 1) setFocusedCellId(prev[idx + 1].id);
+      return prev;
+    });
+  }, [focusedCellId]);
+
+  const handleChangeCellType = useCallback(async (type: "code" | "markdown") => {
+    if (!focusedCellId) return;
+    setCells((prev) => prev.map((c) => c.id === focusedCellId ? { ...c, cell_type: type } : c));
+  }, [focusedCellId]);
+
+  const handleEnterEdit = useCallback(() => {
+    setMode("edit");
+    if (focusedCellId) {
+      const el = document.querySelector(`#cell-${focusedCellId} .monaco-editor`) as HTMLElement;
+      el?.querySelector("textarea")?.focus();
+    }
+  }, [focusedCellId]);
+
+  const handleModeChange = useCallback((newMode: Mode) => {
+    setMode(newMode);
+  }, []);
+
+  useKeyboardShortcuts({
+    cells,
+    focusedCellId,
+    mode,
+    onSetMode: setMode,
+    onAddCellAbove: handleAddCellAbove,
+    onAddCellBelow: handleAddCellBelow,
+    onDeleteCell: () => focusedCellId && handleDeleteCell(focusedCellId),
+    onChangeCellType: handleChangeCellType,
+    onFocusPrev: handleFocusPrev,
+    onFocusNext: handleFocusNext,
+    onEnterEdit: handleEnterEdit,
+    onRunCell: handleMenuRunCell,
+    onSave: handleSave,
+    onOpenPalette: () => setPaletteOpen(true),
+  });
 
   // --- Track focused cell ---
   useEffect(() => {
@@ -493,6 +584,23 @@ export function App() {
     await handleRunAll();
   }, [handleRestart, handleRunAll]);
 
+  const paletteCommands = useMemo(() => [
+    { id: "restart", label: "Restart Kernel", action: handleRestart },
+    { id: "run-all", label: "Run All Cells", action: handleRunAll },
+    { id: "clear-all", label: "Clear All Outputs", action: () => {
+      setCells((prev) => prev.map((c) => ({ ...c, outputs: [], execution_count: null })));
+      setLiveOutputs(new Map());
+    }},
+    { id: "save", label: "Save Notebook", shortcut: "Ctrl+S", action: handleSave },
+    { id: "add-code", label: "Add Code Cell", shortcut: "B", action: () => handleAddCell("code") },
+    { id: "add-md", label: "Add Markdown Cell", action: () => handleAddCell("markdown") },
+    { id: "theme", label: "Toggle Dark Mode", action: toggleTheme },
+    { id: "export-ipynb", label: "Export as .ipynb", action: handleExportIpynb },
+    { id: "export-ybk", label: "Export as .ybk", action: handleExportYbk },
+    { id: "settings", label: "Open Settings", action: () => setSettingsOpen(true) },
+    { id: "shortcuts", label: "Show Keyboard Shortcuts", action: () => setShortcutsOpen(true) },
+  ], [handleRestart, handleRunAll, handleSave, handleAddCell, toggleTheme, handleExportIpynb, handleExportYbk]);
+
   const FONT_SIZES = [12, 13, 14, 16];
 
   const handleFontSizeIncrease = useCallback(() => {
@@ -578,6 +686,9 @@ export function App() {
         liveOutputs={liveOutputs}
         settings={settings}
         installStates={installStates}
+        mode={mode}
+        focusedCellId={focusedCellId}
+        onModeChange={handleModeChange}
         onRunCell={handleRunCell}
         onRunAndAdvance={handleRunAndAdvance}
         onSourceChange={handleSourceChange}
@@ -588,6 +699,8 @@ export function App() {
         onMoveCell={handleMoveCell}
       />
       {toast && <div className="toast">{toast}</div>}
+      <StatusBar mode={mode} connected={connected} saved={saved} />
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={paletteCommands} />
     </>
   );
 }

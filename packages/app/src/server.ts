@@ -27,6 +27,7 @@ async function loadSettings(): Promise<Settings> {
         editor: { ...DEFAULT_SETTINGS.editor, ...data.editor },
         appearance: { ...DEFAULT_SETTINGS.appearance, ...data.appearance },
         execution: { ...DEFAULT_SETTINGS.execution, ...data.execution },
+        ai: { ...DEFAULT_SETTINGS.ai, ...data.ai },
       };
     }
   } catch {}
@@ -54,6 +55,12 @@ export async function startServer(filePath: string, port: number = 3000) {
   const absPath = resolve(filePath);
   const notebook = await Notebook.load(absPath);
 
+  // Track this notebook as recently opened
+  try {
+    const { addRecent } = await import("./dashboard.ts");
+    await addRecent(absPath);
+  } catch {}
+
   const settings = await loadSettings();
 
   // Load plugins
@@ -72,6 +79,21 @@ export async function startServer(filePath: string, port: number = 3000) {
 
   const clients = new Set<any>();
   const ownWriteMarker = createOwnWriteMarker();
+
+  let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function scheduleAutoSave() {
+    if (autoSaveTimer) clearTimeout(autoSaveTimer);
+    autoSaveTimer = setTimeout(async () => {
+      try {
+        ownWriteMarker.mark();
+        await state.notebook.save(state.filePath);
+        for (const c of clients) {
+          try { c.send(JSON.stringify({ type: "auto_saved" })); } catch {}
+        }
+      } catch {}
+    }, 30_000);
+  }
 
   const stopWatcher = watchNotebook(absPath, async () => {
     try {
@@ -144,6 +166,7 @@ export async function startServer(filePath: string, port: number = 3000) {
           const id = state.notebook.addCell(body.type, body.source ?? "");
           ownWriteMarker.mark();
           await state.notebook.save(state.filePath);
+          scheduleAutoSave();
           return Response.json({ id });
         },
       },
@@ -152,6 +175,7 @@ export async function startServer(filePath: string, port: number = 3000) {
           state.notebook.deleteCell(req.params.id);
           ownWriteMarker.mark();
           await state.notebook.save(state.filePath);
+          scheduleAutoSave();
           return Response.json({ ok: true });
         },
         PATCH: async (req) => {
@@ -159,6 +183,7 @@ export async function startServer(filePath: string, port: number = 3000) {
           state.notebook.updateCellSource(req.params.id, body.source);
           ownWriteMarker.mark();
           await state.notebook.save(state.filePath);
+          scheduleAutoSave();
           return Response.json({ ok: true });
         },
       },
@@ -168,6 +193,7 @@ export async function startServer(filePath: string, port: number = 3000) {
           state.notebook.moveCell(req.params.id, body.direction);
           ownWriteMarker.mark();
           await state.notebook.save(state.filePath);
+          scheduleAutoSave();
           return Response.json({ ok: true });
         },
       },
@@ -197,6 +223,7 @@ export async function startServer(filePath: string, port: number = 3000) {
         POST: async () => {
           ownWriteMarker.mark();
           await state.notebook.save(state.filePath);
+          scheduleAutoSave();
           return Response.json({ ok: true });
         },
       },
@@ -248,7 +275,38 @@ export async function startServer(filePath: string, port: number = 3000) {
           const id = state.notebook.insertCellAfter(body.type, body.source ?? "", body.afterId);
           ownWriteMarker.mark();
           await state.notebook.save(state.filePath);
+          scheduleAutoSave();
           return Response.json({ id });
+        },
+      },
+      "/api/ai/generate": {
+        POST: async (req) => {
+          const body = await req.json() as { prompt: string; context: string[]; mode: "generate" | "fix"; code?: string; error?: string };
+          const aiSettings = settings.ai;
+          if (!aiSettings || aiSettings.provider === "disabled" || !aiSettings.apiKey) {
+            return new Response("AI not configured", { status: 400 });
+          }
+          const { buildPrompt, buildFixPrompt, streamAI } = await import("./ai.ts");
+          const { system, user } = body.mode === "fix"
+            ? buildFixPrompt(body.code ?? "", body.error ?? "")
+            : buildPrompt(body.prompt, body.context);
+
+          const stream = new ReadableStream({
+            async start(controller) {
+              try {
+                for await (const chunk of streamAI(aiSettings.provider as any, aiSettings.apiKey, system, user)) {
+                  controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ text: chunk })}\n\n`));
+                }
+                controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+              } catch (e) {
+                controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ error: String(e) })}\n\n`));
+              }
+              controller.close();
+            },
+          });
+          return new Response(stream, {
+            headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
+          });
         },
       },
       "/api/settings": {
@@ -265,6 +323,7 @@ export async function startServer(filePath: string, port: number = 3000) {
           Object.assign(settings.editor, body.editor);
           Object.assign(settings.appearance, body.appearance);
           Object.assign(settings.execution, body.execution);
+          Object.assign(settings.ai, body.ai);
           await saveSettings(settings);
           const pkg = await Bun.file(resolve(import.meta.dirname!, "../package.json")).json();
           return Response.json({
@@ -305,6 +364,20 @@ export async function startServer(filePath: string, port: number = 3000) {
           });
           if (renderer.componentUrl) return Response.redirect(renderer.componentUrl);
           return new Response("No component", { status: 404 });
+        },
+      },
+      "/api/dashboard/files": {
+        GET: async () => {
+          const { listNotebooks } = await import("./dashboard.ts");
+          const files = await listNotebooks(process.cwd());
+          return Response.json({ files });
+        },
+      },
+      "/api/dashboard/recents": {
+        GET: async () => {
+          const { getRecents } = await import("./dashboard.ts");
+          const recents = await getRecents();
+          return Response.json({ recents });
         },
       },
     },
@@ -429,12 +502,14 @@ export async function startServer(filePath: string, port: number = 3000) {
               }));
               ownWriteMarker.mark();
               await state.notebook.save(state.filePath);
+              scheduleAutoSave();
             } else if (magic.length > 0) {
               // Magic-only cell: update source but send idle status
               state.notebook.updateCellSource(msg.cellId, msg.code);
               ws.send(JSON.stringify({ type: "status", cellId: msg.cellId, status: "idle" }));
               ownWriteMarker.mark();
               await state.notebook.save(state.filePath);
+              scheduleAutoSave();
             }
           }
         } catch (err) {

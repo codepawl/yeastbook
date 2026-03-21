@@ -1,4 +1,5 @@
 // src/kernel/output.ts — Detect output type from execution result value
+import { detectMimeOutput } from "./mime.ts";
 
 export type OutputData =
   | { type: "text"; text: string }
@@ -25,12 +26,21 @@ export function detectOutputType(value: unknown): OutputData | null {
   // Check for marker objects
   if (isPlainObject(value)) {
     const v = value as Record<string, unknown>;
+    if (v.__type === "widget") {
+      return { type: "widget", widgetId: v.__widgetId, widgetType: v.__widgetType, value: v.value, config: v.__config } as any;
+    }
     if (v.__type === "chart" && Array.isArray(v.data) && v.config) {
       return { type: "chart", data: v.data, config: v.config as ChartConfig };
     }
     if (v.__type === "html" && typeof v.html === "string") {
       return { type: "html", html: v.html };
     }
+  }
+
+  // Check for MIME output
+  if (isPlainObject(value)) {
+    const mime = detectMimeOutput(value);
+    if (mime) return mime as any;
   }
 
   // Array of plain objects -> table
