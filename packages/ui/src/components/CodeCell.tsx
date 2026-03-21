@@ -12,6 +12,8 @@ interface Props {
   tabSize: number;
   wordWrap: boolean;
   installing?: { packages: string[]; logs: string[]; done: boolean; error?: string };
+  isCommandFocused?: boolean;
+  onModeChange?: (mode: "command" | "edit") => void;
   onRun: (cellId: string, code: string) => void;
   onRunAndAdvance: (cellId: string, code: string) => void;
   onSourceChange: (cellId: string, source: string) => void;
@@ -23,7 +25,7 @@ interface Props {
 
 export function CodeCell({
   cell, busy, liveOutputs, theme, fontSize, tabSize, wordWrap,
-  installing, onRun, onRunAndAdvance, onSourceChange, onDelete, onClear, onMoveUp, onMoveDown,
+  installing, isCommandFocused, onModeChange, onRun, onRunAndAdvance, onSourceChange, onDelete, onClear, onMoveUp, onMoveDown,
 }: Props) {
   const editorRef = useRef<any>(null);
   const monacoRef = useRef<any>(null);
@@ -81,6 +83,10 @@ export function CodeCell({
       () => onRunRef.current(cell.id, sourceRef.current),
     );
 
+    // Mode change on focus/blur
+    editor.onDidFocusEditorText(() => onModeChange?.("edit"));
+    editor.onDidBlurEditorText(() => onModeChange?.("command"));
+
     // Auto-resize + notify parent of source changes
     editor.onDidChangeModelContent(() => {
       sourceRef.current = editor.getValue();
@@ -95,7 +101,7 @@ export function CodeCell({
   const displayOutputs = liveOutputs.length > 0 ? liveOutputs : cell.outputs;
 
   return (
-    <div className="cell code-cell" id={`cell-${cell.id}`}>
+    <div className={`cell code-cell ${isCommandFocused ? "command-focused" : ""}`} id={`cell-${cell.id}`}>
       <div className="cell-header">
         <span className="exec-count">
           {busy && <span className="busy-indicator" />}

@@ -1,6 +1,7 @@
 import { CodeCell } from "./CodeCell.tsx";
 import { MarkdownCell } from "./MarkdownCell.tsx";
 import type { Cell, CellOutput, Settings } from "@yeastbook/core";
+import type { Mode } from "../hooks/useKeyboardShortcuts.ts";
 
 interface Props {
   cells: Cell[];
@@ -8,6 +9,9 @@ interface Props {
   liveOutputs: Map<string, CellOutput[]>;
   settings: Settings;
   installStates: Map<string, { packages: string[]; logs: string[]; done: boolean; error?: string }>;
+  mode: Mode;
+  focusedCellId: string | null;
+  onModeChange: (mode: Mode) => void;
   onRunCell: (cellId: string, code: string) => void;
   onRunAndAdvance: (cellId: string, code: string) => void;
   onSourceChange: (cellId: string, source: string) => void;
@@ -20,6 +24,7 @@ interface Props {
 
 export function NotebookView({
   cells, busyCells, liveOutputs, settings, installStates,
+  mode, focusedCellId, onModeChange,
   onRunCell, onRunAndAdvance, onSourceChange, onDeleteCell, onClearOutput, onUpdateMarkdown, onAddCell, onMoveCell,
 }: Props) {
   return (
@@ -36,6 +41,8 @@ export function NotebookView({
             tabSize={settings.editor.tabSize}
             wordWrap={settings.editor.wordWrap}
             installing={installStates.get(cell.id)}
+            isCommandFocused={mode === "command" && focusedCellId === cell.id}
+            onModeChange={onModeChange}
             onRun={onRunCell}
             onRunAndAdvance={onRunAndAdvance}
             onSourceChange={onSourceChange}
