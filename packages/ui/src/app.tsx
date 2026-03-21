@@ -4,8 +4,8 @@ import { EditableFileName } from "./components/EditableFileName.tsx";
 import { SettingsPanel } from "./components/SettingsPanel.tsx";
 import { MenuBar, ShortcutsModal, AboutModal } from "./components/MenuBar.tsx";
 import { useWebSocket } from "./useWebSocket.ts";
-import type { Cell, CellOutput, WsIncoming, Settings } from "./types.ts";
-import { DEFAULT_SETTINGS } from "./types.ts";
+import type { Cell, CellOutput, WsIncoming, Settings } from "@yeastbook/core";
+import { DEFAULT_SETTINGS } from "@yeastbook/core";
 
 function getInitialTheme(): "light" | "dark" {
   const stored = localStorage.getItem("yeastbook-theme");

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import type { WsIncoming } from "./types.ts";
+import type { WsIncoming } from "@yeastbook/core";
 
 type MessageHandler = (msg: WsIncoming) => void;
 

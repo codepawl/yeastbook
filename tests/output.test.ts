@@ -1,5 +1,5 @@
 import { test, expect, describe } from "bun:test";
-import { detectOutputType } from "../src/kernel/output.ts";
+import { detectOutputType } from "../packages/core/src/output.ts";
 
 describe("detectOutputType", () => {
   test("null returns null (skip)", () => {

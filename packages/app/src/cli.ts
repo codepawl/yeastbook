@@ -5,8 +5,8 @@ import { resolve, basename, dirname, join } from "node:path";
 import { unlink, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { startServer } from "./server.ts";
-import { loadNotebook, saveNotebook, ybkToIpynb, ipynbToYbk, createEmptyYbk } from "./format.ts";
-import type { IpynbNotebook } from "./format.ts";
+import { loadNotebook, saveNotebook, ybkToIpynb, ipynbToYbk, createEmptyYbk } from "@yeastbook/core";
+import type { IpynbNotebook } from "@yeastbook/core";
 
 // ---------------------------------------------------------------------------
 // Flag parsing

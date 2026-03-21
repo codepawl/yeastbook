@@ -3,7 +3,7 @@ import { DataTable } from "./outputs/DataTable.tsx";
 import { ChartOutput } from "./outputs/ChartOutput.tsx";
 import { HtmlOutput } from "./outputs/HtmlOutput.tsx";
 import { PluginRenderer } from "./outputs/PluginRenderer.tsx";
-import type { CellOutput as CellOutputType } from "../types.ts";
+import type { CellOutput as CellOutputType } from "@yeastbook/core";
 
 interface Props {
   outputs: CellOutputType[];

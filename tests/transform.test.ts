@@ -1,5 +1,5 @@
 import { test, expect, describe } from "bun:test";
-import { transformCellCode } from "../src/kernel/transform.ts";
+import { transformCellCode } from "../packages/core/src/transform.ts";
 
 describe("transformCellCode", () => {
   test("converts top-level const to var", () => {

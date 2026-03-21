@@ -5,16 +5,15 @@ import { homedir } from "node:os";
 import { rename, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { assets } from "./assets.ts";
-import { Notebook } from "./notebook.ts";
 import { executeCode } from "./kernel/execute.ts";
-import { loadNotebook as loadNb, ybkToIpynb, detectFormat, createEmptyYbk } from "./format.ts";
-import type { Settings } from "./ui/types.ts";
-import { DEFAULT_SETTINGS } from "./ui/types.ts";
-import { parseMagicCommands } from "./kernel/magic.ts";
 import { installPackages } from "./kernel/installer.ts";
-import { detectOutputType } from "./kernel/output.ts";
 import { watchNotebook, createOwnWriteMarker } from "./watcher.ts";
 import { PluginLoader } from "./plugins/loader.ts";
+import {
+  Notebook, loadNotebook as loadNb, ybkToIpynb, detectFormat, createEmptyYbk,
+  parseMagicCommands, detectOutputType, DEFAULT_SETTINGS,
+} from "@yeastbook/core";
+import type { Settings } from "@yeastbook/core";
 
 const SETTINGS_DIR = join(homedir(), ".yeastbook");
 const SETTINGS_FILE = join(SETTINGS_DIR, "settings.json");
@@ -48,7 +47,7 @@ interface ServerState {
 
 function isDevMode(): boolean {
   // In dev mode, dist/ directory exists alongside source. In compiled binary, it won't.
-  return existsSync(resolve(import.meta.dirname!, "../dist"));
+  return existsSync(resolve(import.meta.dirname!, "../../ui/dist"));
 }
 
 export async function startServer(filePath: string, port: number = 3000) {
@@ -84,7 +83,7 @@ export async function startServer(filePath: string, port: number = 3000) {
     } catch {}
   }, ownWriteMarker);
 
-  const distDir = resolve(import.meta.dirname!, "../dist");
+  const distDir = resolve(import.meta.dirname!, "../../ui/dist");
 
   const CONTENT_TYPES: Record<string, string> = {
     ".html": "text/html; charset=utf-8",
@@ -182,7 +181,7 @@ export async function startServer(filePath: string, port: number = 3000) {
           await rename(state.filePath, newPath);
           state.filePath = newPath;
           // Update notebook format if extension changed
-          const { detectFormat } = await import("./format.ts");
+          const { detectFormat } = await import("@yeastbook/core");
           state.notebook.format = detectFormat(newPath);
           return Response.json({ fileName: basename(newPath), fileFormat: state.notebook.format });
         },
@@ -278,7 +277,7 @@ export async function startServer(filePath: string, port: number = 3000) {
       "/api/types/bun": {
         GET: async () => {
           try {
-            const typesPath = resolve(import.meta.dirname!, "../node_modules/@types/bun/index.d.ts");
+            const typesPath = resolve(import.meta.dirname!, "../../../node_modules/@types/bun/index.d.ts");
             const file = Bun.file(typesPath);
             if (await file.exists()) {
               return new Response(await file.text(), {

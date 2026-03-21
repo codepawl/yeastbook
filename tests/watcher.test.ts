@@ -2,7 +2,7 @@ import { test, expect, describe, beforeEach, afterEach } from "bun:test";
 import { join } from "node:path";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { watchNotebook, createOwnWriteMarker } from "../src/watcher.ts";
+import { watchNotebook, createOwnWriteMarker } from "../packages/app/src/watcher.ts";
 
 describe("watchNotebook", () => {
   let tempDir: string;

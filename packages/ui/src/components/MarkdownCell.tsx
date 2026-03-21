@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 
-import type { Cell } from "../types.ts";
+import type { Cell } from "@yeastbook/core";
 
 interface Props {
   cell: Cell;

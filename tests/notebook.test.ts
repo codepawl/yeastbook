@@ -1,5 +1,5 @@
 import { test, expect, describe, beforeEach, afterEach } from "bun:test";
-import { Notebook } from "../src/notebook.ts";
+import { Notebook } from "../packages/core/src/notebook.ts";
 import { unlink } from "node:fs/promises";
 
 describe("Notebook", () => {

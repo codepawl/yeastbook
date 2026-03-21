@@ -1,5 +1,5 @@
 import { test, expect, describe } from "bun:test";
-import { parseMagicCommands } from "../src/kernel/magic.ts";
+import { parseMagicCommands } from "../packages/core/src/magic.ts";
 
 describe("parseMagicCommands", () => {
   test("parses single %install command", () => {

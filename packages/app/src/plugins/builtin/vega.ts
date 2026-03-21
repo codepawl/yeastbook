@@ -1,4 +1,4 @@
-import type { YbkPlugin } from "../types.ts";
+import type { YbkPlugin } from "@yeastbook/core";
 
 export default {
   name: "yeastbook-vega",

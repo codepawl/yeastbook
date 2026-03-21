@@ -2,7 +2,7 @@ import { test, expect, describe, beforeEach, afterEach } from "bun:test";
 import { join } from "node:path";
 import { mkdtemp, rm, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { PluginLoader } from "../src/plugins/loader.ts";
+import { PluginLoader } from "../packages/app/src/plugins/loader.ts";
 
 describe("PluginLoader", () => {
   let tempDir: string;
