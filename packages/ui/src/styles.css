@@ -770,3 +770,44 @@ input, textarea, select {
 
 /* Notebook bottom padding for status bar */
 .notebook { padding-bottom: 140px; }
+
+/* --- Command Palette --- */
+.palette-overlay {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex; justify-content: center; padding-top: 20vh;
+}
+.palette {
+  width: 500px; max-width: 90vw;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+  overflow: hidden;
+  max-height: 400px;
+  display: flex; flex-direction: column;
+}
+.palette-input {
+  width: 100%; padding: 14px 16px;
+  border: none; border-bottom: 1px solid var(--border-light);
+  font-family: 'Inter', sans-serif; font-size: 14px;
+  background: var(--surface); color: var(--text);
+  outline: none;
+}
+.palette-list { overflow-y: auto; flex: 1; }
+.palette-item {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 16px;
+  background: none; border: none;
+  font-family: 'Inter', sans-serif; font-size: 13px;
+  color: var(--text); cursor: pointer; text-align: left;
+}
+.palette-item:hover, .palette-item.selected { background: var(--accent-hover); }
+.palette-shortcut {
+  font-size: 11px; color: var(--text-faint);
+  font-family: 'JetBrains Mono', monospace;
+}
+.palette-empty {
+  padding: 16px; text-align: center;
+  color: var(--text-faint); font-size: 13px;
+}

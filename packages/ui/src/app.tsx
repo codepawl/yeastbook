@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { NotebookView } from "./components/NotebookView.tsx";
 import { EditableFileName } from "./components/EditableFileName.tsx";
 import { SettingsPanel } from "./components/SettingsPanel.tsx";
 import { MenuBar, ShortcutsModal, AboutModal } from "./components/MenuBar.tsx";
 import { StatusBar } from "./components/StatusBar.tsx";
+import { CommandPalette } from "./components/CommandPalette.tsx";
 import { useWebSocket } from "./useWebSocket.ts";
 import { useKeyboardShortcuts, type Mode } from "./hooks/useKeyboardShortcuts.ts";
 import type { Cell, CellOutput, WsIncoming, Settings } from "@yeastbook/core";
@@ -33,6 +34,7 @@ export function App() {
   const [toast, setToast] = useState<string | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [installStates, setInstallStates] = useState<Map<string, { packages: string[]; logs: string[]; done: boolean; error?: string }>>(new Map());
   const [mode, setMode] = useState<Mode>("command");
   const runAllResolveRef = useRef<(() => void) | null>(null);
@@ -474,7 +476,7 @@ export function App() {
     onEnterEdit: handleEnterEdit,
     onRunCell: handleMenuRunCell,
     onSave: handleSave,
-    onOpenPalette: () => {},
+    onOpenPalette: () => setPaletteOpen(true),
   });
 
   // --- Track focused cell ---
@@ -582,6 +584,23 @@ export function App() {
     await handleRunAll();
   }, [handleRestart, handleRunAll]);
 
+  const paletteCommands = useMemo(() => [
+    { id: "restart", label: "Restart Kernel", action: handleRestart },
+    { id: "run-all", label: "Run All Cells", action: handleRunAll },
+    { id: "clear-all", label: "Clear All Outputs", action: () => {
+      setCells((prev) => prev.map((c) => ({ ...c, outputs: [], execution_count: null })));
+      setLiveOutputs(new Map());
+    }},
+    { id: "save", label: "Save Notebook", shortcut: "Ctrl+S", action: handleSave },
+    { id: "add-code", label: "Add Code Cell", shortcut: "B", action: () => handleAddCell("code") },
+    { id: "add-md", label: "Add Markdown Cell", action: () => handleAddCell("markdown") },
+    { id: "theme", label: "Toggle Dark Mode", action: toggleTheme },
+    { id: "export-ipynb", label: "Export as .ipynb", action: handleExportIpynb },
+    { id: "export-ybk", label: "Export as .ybk", action: handleExportYbk },
+    { id: "settings", label: "Open Settings", action: () => setSettingsOpen(true) },
+    { id: "shortcuts", label: "Show Keyboard Shortcuts", action: () => setShortcutsOpen(true) },
+  ], [handleRestart, handleRunAll, handleSave, handleAddCell, toggleTheme, handleExportIpynb, handleExportYbk]);
+
   const FONT_SIZES = [12, 13, 14, 16];
 
   const handleFontSizeIncrease = useCallback(() => {
@@ -681,6 +700,7 @@ export function App() {
       />
       {toast && <div className="toast">{toast}</div>}
       <StatusBar mode={mode} connected={connected} saved={saved} />
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={paletteCommands} />
     </>
   );
 }
