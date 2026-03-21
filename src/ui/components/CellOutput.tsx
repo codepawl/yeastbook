@@ -2,6 +2,7 @@ import { JsonTree } from "./outputs/JsonTree.tsx";
 import { DataTable } from "./outputs/DataTable.tsx";
 import { ChartOutput } from "./outputs/ChartOutput.tsx";
 import { HtmlOutput } from "./outputs/HtmlOutput.tsx";
+import { PluginRenderer } from "./outputs/PluginRenderer.tsx";
 import type { CellOutput as CellOutputType } from "../types.ts";
 
 interface Props {
@@ -61,6 +62,8 @@ function RichOutputRenderer({ output }: { output: NonNullable<CellOutputType["ri
       return <JsonTree data={output.data} />;
     case "text":
       return <div className="output-result">{output.text}</div>;
+    case "plugin":
+      return <PluginRenderer pluginType={(output as any).pluginType} data={(output as any).data} />;
     default:
       return null;
   }
