@@ -82,8 +82,11 @@ export async function startServer(filePath: string, port: number = 3000) {
       // Serve static files from dist/ or embedded assets
       if (url.pathname !== "/" && !url.pathname.startsWith("/api/")) {
         if (isDevMode()) {
-          const safePath = url.pathname.slice(1).replace(/\.\./g, "");
+          const safePath = url.pathname.slice(1);
           const filePath = resolve(distDir, safePath);
+          if (!filePath.startsWith(distDir + "/")) {
+            return new Response("Not found", { status: 404 });
+          }
           const ext = safePath.substring(safePath.lastIndexOf("."));
           const contentType = CONTENT_TYPES[ext] || "application/octet-stream";
           return new Response(Bun.file(filePath), {
