@@ -106,4 +106,11 @@ describe("executeCode", () => {
     const result = await executeCode("x * y", ctx);
     expect(result.value).toBe(12);
   });
+
+  test("error includes traceback lines", async () => {
+    const result = await executeCode("const a = 1\nundefinedVar.foo", {});
+    expect(result.error).toBeDefined();
+    expect(result.error!.ename).toBe("ReferenceError");
+    expect(result.error!.traceback.length).toBeGreaterThan(0);
+  });
 });
