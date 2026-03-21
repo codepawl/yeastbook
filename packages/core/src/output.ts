@@ -1,4 +1,5 @@
 // src/kernel/output.ts — Detect output type from execution result value
+import { detectMimeOutput } from "./mime.ts";
 
 export type OutputData =
   | { type: "text"; text: string }
@@ -31,6 +32,12 @@ export function detectOutputType(value: unknown): OutputData | null {
     if (v.__type === "html" && typeof v.html === "string") {
       return { type: "html", html: v.html };
     }
+  }
+
+  // Check for MIME output
+  if (isPlainObject(value)) {
+    const mime = detectMimeOutput(value);
+    if (mime) return mime as any;
   }
 
   // Array of plain objects -> table

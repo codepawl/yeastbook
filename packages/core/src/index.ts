@@ -10,3 +10,5 @@ export { Notebook } from "./notebook.ts";
 export type { YbkPlugin, OutputRendererPlugin } from "./plugins.ts";
 export type { Settings, Cell, CellOutput, NotebookData, RichOutput, WsIncoming, WsOutgoing } from "./types.ts";
 export { DEFAULT_SETTINGS } from "./types.ts";
+export { detectMimeOutput } from "./mime.ts";
+export type { MimeOutput } from "./mime.ts";

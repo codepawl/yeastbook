@@ -3,6 +3,7 @@ import { DataTable } from "./outputs/DataTable.tsx";
 import { ChartOutput } from "./outputs/ChartOutput.tsx";
 import { HtmlOutput } from "./outputs/HtmlOutput.tsx";
 import { PluginRenderer } from "./outputs/PluginRenderer.tsx";
+import { MimeOutput } from "./outputs/MimeOutput.tsx";
 import type { CellOutput as CellOutputType } from "@yeastbook/core";
 
 interface Props {
@@ -64,6 +65,8 @@ function RichOutputRenderer({ output }: { output: NonNullable<CellOutputType["ri
       return <div className="output-result">{output.text}</div>;
     case "plugin":
       return <PluginRenderer pluginType={(output as any).pluginType} data={(output as any).data} />;
+    case "mime":
+      return <MimeOutput mime={(output as any).mime} data={(output as any).data} url={(output as any).url} />;
     default:
       return null;
   }
