@@ -63,4 +63,47 @@ describe("executeCode", () => {
     const result = await executeCode("const a = 10\nconst b = 20\na + b", {});
     expect(result.value).toBe(30);
   });
+
+  test("persists const variables across cells via context", async () => {
+    const ctx: Record<string, unknown> = {};
+    await executeCode("const x = 42", ctx);
+    const result = await executeCode("x", ctx);
+    expect(result.value).toBe(42);
+  });
+
+  test("persists let variables across cells via context", async () => {
+    const ctx: Record<string, unknown> = {};
+    await executeCode("let y = 'hello'", ctx);
+    const result = await executeCode("y", ctx);
+    expect(result.value).toBe("hello");
+  });
+
+  test("top-level await with const works", async () => {
+    const ctx: Record<string, unknown> = {};
+    await executeCode("const val = await Promise.resolve(123)", ctx);
+    const result = await executeCode("val", ctx);
+    expect(result.value).toBe(123);
+  });
+
+  test("const inside function stays const", async () => {
+    const result = await executeCode(
+      "function foo() { const x = 1; return x }\nfoo()",
+      {}
+    );
+    expect(result.value).toBe(1);
+  });
+
+  test("destructured const persists across cells", async () => {
+    const ctx: Record<string, unknown> = {};
+    await executeCode("const { a, b } = { a: 10, b: 20 }", ctx);
+    const result = await executeCode("a + b", ctx);
+    expect(result.value).toBe(30);
+  });
+
+  test("array destructured let persists across cells", async () => {
+    const ctx: Record<string, unknown> = {};
+    await executeCode("let [x, y] = [3, 4]", ctx);
+    const result = await executeCode("x * y", ctx);
+    expect(result.value).toBe(12);
+  });
 });
