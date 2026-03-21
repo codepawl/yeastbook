@@ -10,6 +10,9 @@ import { executeCode } from "./kernel/execute.ts";
 import { loadNotebook as loadNb, ybkToIpynb, detectFormat, createEmptyYbk } from "./format.ts";
 import type { Settings } from "./ui/types.ts";
 import { DEFAULT_SETTINGS } from "./ui/types.ts";
+import { parseMagicCommands } from "./kernel/magic.ts";
+import { installPackages } from "./kernel/installer.ts";
+import { detectOutputType } from "./kernel/output.ts";
 
 const SETTINGS_DIR = join(homedir(), ".yeastbook");
 const SETTINGS_FILE = join(SETTINGS_DIR, "settings.json");
@@ -241,6 +244,20 @@ export async function startServer(filePath: string, port: number = 3000) {
           });
         },
       },
+      "/api/types/bun": {
+        GET: async () => {
+          try {
+            const typesPath = resolve(import.meta.dirname!, "../node_modules/@types/bun/index.d.ts");
+            const file = Bun.file(typesPath);
+            if (await file.exists()) {
+              return new Response(await file.text(), {
+                headers: { "Content-Type": "text/plain; charset=utf-8" },
+              });
+            }
+          } catch {}
+          return new Response("", { headers: { "Content-Type": "text/plain" } });
+        },
+      },
     },
     websocket: {
       open() {},
@@ -251,48 +268,113 @@ export async function startServer(filePath: string, port: number = 3000) {
             | { type: "interrupt" };
 
           if (msg.type === "execute") {
-            ws.send(JSON.stringify({ type: "status", cellId: msg.cellId, status: "busy" }));
+            // Parse magic commands
+            const { magic, cleanCode } = parseMagicCommands(msg.code);
 
-            state.executionCount++;
-            const result = await executeCode(msg.code, state.context);
-
-            state.notebook.updateCellSource(msg.cellId, msg.code);
-            state.notebook.setCellOutput(msg.cellId, state.executionCount, {
-              value: result.value !== undefined ? Bun.inspect(result.value) : undefined,
-              stdout: result.stdout,
-              stderr: result.stderr,
-              error: result.error,
-            });
-
-            if (result.stdout) {
-              ws.send(JSON.stringify({
-                type: "stream", cellId: msg.cellId, name: "stdout", text: result.stdout,
-              }));
-            }
-            if (result.stderr) {
-              ws.send(JSON.stringify({
-                type: "stream", cellId: msg.cellId, name: "stderr", text: result.stderr,
-              }));
-            }
-            if (result.error) {
-              ws.send(JSON.stringify({
-                type: "error",
-                cellId: msg.cellId,
-                ename: result.error.ename,
-                evalue: result.error.evalue,
-                traceback: result.error.traceback,
-              }));
-            } else if (result.value !== undefined) {
-              ws.send(JSON.stringify({
-                type: "result",
-                cellId: msg.cellId,
-                value: Bun.inspect(result.value),
-                executionCount: state.executionCount,
-              }));
+            // Send busy status upfront (needed for both magic-only and code cells)
+            if (magic.length > 0 || cleanCode.trim()) {
+              ws.send(JSON.stringify({ type: "status", cellId: msg.cellId, status: "busy" }));
             }
 
-            ws.send(JSON.stringify({ type: "status", cellId: msg.cellId, status: "idle", executionCount: state.executionCount }));
-            await state.notebook.save(state.filePath);
+            // Handle %install commands
+            for (const cmd of magic) {
+              if (cmd.type === "install") {
+                if (cmd.packages.length === 0) {
+                  ws.send(JSON.stringify({
+                    type: "install_error", cellId: msg.cellId, error: "No packages specified. Usage: %install <package>",
+                  }));
+                  continue;
+                }
+
+                ws.send(JSON.stringify({
+                  type: "install_start", cellId: msg.cellId, packages: cmd.packages,
+                }));
+
+                const result = await installPackages(cmd.packages, (text, stream) => {
+                  ws.send(JSON.stringify({
+                    type: "install_log", cellId: msg.cellId, text, stream,
+                  }));
+                });
+
+                if (result.success) {
+                  // Try to read type definitions for installed packages
+                  const packageDts: Record<string, string> = {};
+                  for (const pkg of cmd.packages) {
+                    try {
+                      const paths = [
+                        resolve("node_modules", pkg, "index.d.ts"),
+                        resolve("node_modules", "@types", pkg, "index.d.ts"),
+                      ];
+                      for (const p of paths) {
+                        const f = Bun.file(p);
+                        if (await f.exists()) {
+                          packageDts[pkg] = await f.text();
+                          break;
+                        }
+                      }
+                    } catch {}
+                  }
+                  ws.send(JSON.stringify({
+                    type: "install_done", cellId: msg.cellId, success: true,
+                    ...(Object.keys(packageDts).length > 0 ? { packageDts } : {}),
+                  }));
+                } else {
+                  ws.send(JSON.stringify({
+                    type: "install_error", cellId: msg.cellId, error: result.error,
+                  }));
+                }
+              }
+            }
+
+            // Execute clean code (if any remains after stripping magic lines)
+            if (cleanCode.trim()) {
+              state.executionCount++;
+              const result = await executeCode(cleanCode, state.context);
+
+              state.notebook.updateCellSource(msg.cellId, msg.code);
+              state.notebook.setCellOutput(msg.cellId, state.executionCount, {
+                value: result.value !== undefined ? Bun.inspect(result.value) : undefined,
+                stdout: result.stdout,
+                stderr: result.stderr,
+                error: result.error,
+              });
+
+              if (result.stdout) {
+                ws.send(JSON.stringify({
+                  type: "stream", cellId: msg.cellId, name: "stdout", text: result.stdout,
+                }));
+              }
+              if (result.stderr) {
+                ws.send(JSON.stringify({
+                  type: "stream", cellId: msg.cellId, name: "stderr", text: result.stderr,
+                }));
+              }
+              if (result.error) {
+                ws.send(JSON.stringify({
+                  type: "error", cellId: msg.cellId,
+                  ename: result.error.ename, evalue: result.error.evalue, traceback: result.error.traceback,
+                }));
+              } else if (result.value !== undefined) {
+                // Detect rich output type
+                const richOutput = detectOutputType(result.value);
+                ws.send(JSON.stringify({
+                  type: "result", cellId: msg.cellId,
+                  value: Bun.inspect(result.value),
+                  executionCount: state.executionCount,
+                  ...(richOutput ? { richOutput } : {}),
+                }));
+              }
+
+              ws.send(JSON.stringify({
+                type: "status", cellId: msg.cellId, status: "idle", executionCount: state.executionCount,
+              }));
+              await state.notebook.save(state.filePath);
+            } else if (magic.length > 0) {
+              // Magic-only cell: update source but send idle status
+              state.notebook.updateCellSource(msg.cellId, msg.code);
+              ws.send(JSON.stringify({ type: "status", cellId: msg.cellId, status: "idle" }));
+              await state.notebook.save(state.filePath);
+            }
           }
         } catch (err) {
           // Catch-all: never let a bad message crash the server
