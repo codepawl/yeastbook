@@ -1,13 +1,16 @@
 import { CodeCell } from "./CodeCell.tsx";
 import { MarkdownCell } from "./MarkdownCell.tsx";
-import type { Cell, CellOutput } from "../types.ts";
+import type { Cell, CellOutput, Settings } from "../types.ts";
 
 interface Props {
   cells: Cell[];
   busyCells: Set<string>;
   liveOutputs: Map<string, CellOutput[]>;
+  settings: Settings;
+  installStates: Map<string, { packages: string[]; logs: string[]; done: boolean; error?: string }>;
   onRunCell: (cellId: string, code: string) => void;
   onRunAndAdvance: (cellId: string, code: string) => void;
+  onSourceChange: (cellId: string, source: string) => void;
   onDeleteCell: (cellId: string) => void;
   onClearOutput: (cellId: string) => void;
   onUpdateMarkdown: (cellId: string, source: string) => void;
@@ -16,8 +19,8 @@ interface Props {
 }
 
 export function NotebookView({
-  cells, busyCells, liveOutputs,
-  onRunCell, onRunAndAdvance, onDeleteCell, onClearOutput, onUpdateMarkdown, onAddCell, onMoveCell,
+  cells, busyCells, liveOutputs, settings, installStates,
+  onRunCell, onRunAndAdvance, onSourceChange, onDeleteCell, onClearOutput, onUpdateMarkdown, onAddCell, onMoveCell,
 }: Props) {
   return (
     <div className="notebook">
@@ -28,8 +31,14 @@ export function NotebookView({
             cell={cell}
             busy={busyCells.has(cell.id)}
             liveOutputs={liveOutputs.get(cell.id) || []}
+            theme={settings.appearance.theme}
+            fontSize={settings.editor.fontSize}
+            tabSize={settings.editor.tabSize}
+            wordWrap={settings.editor.wordWrap}
+            installing={installStates.get(cell.id)}
             onRun={onRunCell}
             onRunAndAdvance={onRunAndAdvance}
+            onSourceChange={onSourceChange}
             onDelete={onDeleteCell}
             onClear={onClearOutput}
             onMoveUp={idx > 0 ? () => onMoveCell(cell.id, "up") : undefined}

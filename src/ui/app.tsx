@@ -31,7 +31,7 @@ export function App() {
   const [toast, setToast] = useState<string | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
-  const pendingFocusCellId = useRef<string | null>(null);
+  const [installStates, setInstallStates] = useState<Map<string, { packages: string[]; logs: string[]; done: boolean; error?: string }>>(new Map());
   const runAllResolveRef = useRef<(() => void) | null>(null);
 
   const showToast = useCallback((msg: string) => {
@@ -54,10 +54,6 @@ export function App() {
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("yeastbook-theme", theme);
-    const light = document.getElementById("hljs-light") as HTMLLinkElement | null;
-    const dark = document.getElementById("hljs-dark") as HTMLLinkElement | null;
-    if (light) light.media = theme === "light" ? "all" : "not all";
-    if (dark) dark.media = theme === "dark" ? "all" : "not all";
   }, [theme]);
 
   const toggleTheme = useCallback(() => {
@@ -182,6 +178,43 @@ export function App() {
           return next;
         });
         break;
+      case "install_start":
+        setInstallStates((prev) => {
+          const next = new Map(prev);
+          next.set(msg.cellId, { packages: msg.packages, logs: [], done: false });
+          return next;
+        });
+        break;
+      case "install_log":
+        setInstallStates((prev) => {
+          const next = new Map(prev);
+          const state = next.get(msg.cellId);
+          if (state) {
+            next.set(msg.cellId, { ...state, logs: [...state.logs, msg.text] });
+          }
+          return next;
+        });
+        break;
+      case "install_done":
+        setInstallStates((prev) => {
+          const next = new Map(prev);
+          const state = next.get(msg.cellId);
+          if (state) {
+            next.set(msg.cellId, { ...state, done: true });
+          }
+          return next;
+        });
+        break;
+      case "install_error":
+        setInstallStates((prev) => {
+          const next = new Map(prev);
+          const state = next.get(msg.cellId);
+          if (state) {
+            next.set(msg.cellId, { ...state, done: true, error: msg.error });
+          }
+          return next;
+        });
+        break;
     }
   }, []);
 
@@ -220,27 +253,9 @@ export function App() {
   const handleRunAndAdvance = useCallback(
     (cellId: string, code: string) => {
       handleRunCell(cellId, code);
-      setCells((prev) => {
-        const idx = prev.findIndex((c) => c.id === cellId);
-        if (idx >= 0 && idx < prev.length - 1) {
-          pendingFocusCellId.current = prev[idx + 1].id;
-        }
-        return prev;
-      });
     },
     [handleRunCell]
   );
-
-  useEffect(() => {
-    if (pendingFocusCellId.current) {
-      const id = pendingFocusCellId.current;
-      pendingFocusCellId.current = null;
-      requestAnimationFrame(() => {
-        const el = document.querySelector(`#cell-${id} textarea`) as HTMLTextAreaElement | null;
-        el?.focus();
-      });
-    }
-  }, [cells]);
 
   const handleDeleteCell = useCallback(async (cellId: string) => {
     await fetch(`/api/cells/${cellId}`, { method: "DELETE" });
@@ -269,6 +284,12 @@ export function App() {
       prev.map((c) => (c.id === cellId ? { ...c, source: [source] } : c))
     );
     setSaved(true);
+  }, []);
+
+  const handleSourceChange = useCallback((cellId: string, source: string) => {
+    setCells((prev) =>
+      prev.map((c) => (c.id === cellId ? { ...c, source: [source] } : c))
+    );
   }, []);
 
   const handleAddCell = useCallback(async (type: "code" | "markdown") => {
@@ -331,8 +352,7 @@ export function App() {
     const codeCells = currentCells.filter((c) => c.cell_type === "code");
 
     for (const cell of codeCells) {
-      const ta = document.querySelector(`#cell-${cell.id} textarea`) as HTMLTextAreaElement | null;
-      const code = ta?.value ?? cell.source.join("\n");
+      const code = cell.source.join("\n");
       if (!code.trim()) continue;
       await new Promise<void>((resolve) => {
         runAllResolveRef.current = resolve;
@@ -418,10 +438,7 @@ export function App() {
     if (!focusedCellId) return;
     const cell = cells.find((c) => c.id === focusedCellId);
     if (cell) {
-      // Capture latest source from textarea
-      const ta = document.querySelector(`#cell-${cell.id} textarea`) as HTMLTextAreaElement | null;
-      const source = ta ? [ta.value] : cell.source;
-      setClipboardCell({ ...cell, source });
+      setClipboardCell({ ...cell });
     }
   }, [focusedCellId, cells]);
 
@@ -456,10 +473,9 @@ export function App() {
 
   const handleMenuRunCell = useCallback(() => {
     if (!focusedCellId) return;
-    const ta = document.querySelector(`#cell-${focusedCellId} textarea`) as HTMLTextAreaElement | null;
     const cell = cells.find((c) => c.id === focusedCellId);
     if (cell && cell.cell_type === "code") {
-      const code = ta?.value ?? cell.source.join("\n");
+      const code = cell.source.join("\n");
       handleRunCell(focusedCellId, code);
     }
   }, [focusedCellId, cells, handleRunCell]);
@@ -552,8 +568,11 @@ export function App() {
         cells={cells}
         busyCells={busyCells}
         liveOutputs={liveOutputs}
+        settings={settings}
+        installStates={installStates}
         onRunCell={handleRunCell}
         onRunAndAdvance={handleRunAndAdvance}
+        onSourceChange={handleSourceChange}
         onDeleteCell={handleDeleteCell}
         onClearOutput={handleClearOutput}
         onUpdateMarkdown={handleUpdateMarkdown}
