@@ -81,6 +81,19 @@ function printUsage(): void {
   console.log("  --ipynb       Use .ipynb format (with `new` command)");
 }
 
+async function findFreePort(start = 3000): Promise<number> {
+  for (let port = start; port < start + 10; port++) {
+    try {
+      const server = Bun.serve({ port, fetch() { return new Response(); } });
+      server.stop();
+      return port;
+    } catch {
+      continue;
+    }
+  }
+  throw new Error(`No free port found between ${start}-${start + 9}`);
+}
+
 // ---------------------------------------------------------------------------
 // Plugin subcommand
 // ---------------------------------------------------------------------------
@@ -203,9 +216,15 @@ if (command === "new") {
   const filePath = resolve(`notebook-${Date.now()}${ext}`);
   console.log(`Creating new notebook: ${filePath}`);
 
-  const server = await startServer(filePath, port);
+  const actualPort = await findFreePort(port);
+  const server = await startServer(filePath, actualPort);
   console.log(`Yeastbook running at http://localhost:${server.port}`);
   console.log(`Notebook: ${filePath}`);
+  process.on("SIGINT", () => {
+    console.log("\nShutting down yeastbook...");
+    server.stop();
+    process.exit(0);
+  });
 } else if (command === "export") {
   const srcPath = resolve(positional[1] ?? "");
   if (!srcPath || !srcPath.endsWith(".ybk")) {
@@ -234,7 +253,13 @@ if (command === "new") {
   // Open existing notebook by path
   await checkWritePermission();
   const filePath = resolve(command);
-  const server = await startServer(filePath, port);
+  const actualPort = await findFreePort(port);
+  const server = await startServer(filePath, actualPort);
   console.log(`Yeastbook running at http://localhost:${server.port}`);
   console.log(`Notebook: ${filePath}`);
+  process.on("SIGINT", () => {
+    console.log("\nShutting down yeastbook...");
+    server.stop();
+    process.exit(0);
+  });
 }
