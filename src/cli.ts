@@ -1,11 +1,58 @@
 #!/usr/bin/env bun
 // src/cli.ts — Yeastbook CLI
 
-import { resolve, basename, dirname, join, extname } from "node:path";
-import { unlink } from "node:fs/promises";
+import { resolve, basename, dirname, join } from "node:path";
+import { unlink, mkdir } from "node:fs/promises";
+import { homedir } from "node:os";
 import { startServer } from "./server.ts";
 import { loadNotebook, saveNotebook, ybkToIpynb, ipynbToYbk, createEmptyYbk } from "./format.ts";
 import type { IpynbNotebook } from "./format.ts";
+
+// ---------------------------------------------------------------------------
+// Flag parsing
+// ---------------------------------------------------------------------------
+
+interface ParsedArgs {
+  positional: string[];
+  port: number;
+  noOpen: boolean;
+  ipynb: boolean;
+}
+
+function parseFlags(argv: string[]): ParsedArgs {
+  const positional: string[] = [];
+  let port = parseInt(process.env.PORT ?? "3000", 10);
+  let noOpen = false;
+  let ipynb = false;
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--port") {
+      const next = argv[i + 1];
+      if (next !== undefined && !next.startsWith("-")) {
+        port = parseInt(next, 10);
+        i++;
+      } else {
+        console.error("Error: --port requires a numeric argument.");
+        process.exit(1);
+      }
+    } else if (arg.startsWith("--port=")) {
+      port = parseInt(arg.slice("--port=".length), 10);
+    } else if (arg === "--no-open") {
+      noOpen = true;
+    } else if (arg === "--ipynb") {
+      ipynb = true;
+    } else {
+      positional.push(arg);
+    }
+  }
+
+  return { positional, port, noOpen, ipynb };
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 async function checkWritePermission(): Promise<void> {
   const testFile = resolve(".yeastbook-write-test");
@@ -18,42 +65,162 @@ async function checkWritePermission(): Promise<void> {
   }
 }
 
-const args = process.argv.slice(2);
-const command = args[0];
+function printUsage(): void {
+  console.log("Usage:");
+  console.log("  yeastbook new [--ipynb] [--port <n>] [--no-open]   Create a new notebook (.ybk default)");
+  console.log("  yeastbook <file.ybk|file.ipynb> [--port <n>] [--no-open]   Open a notebook");
+  console.log("  yeastbook export <file.ybk>                         Convert .ybk → .ipynb");
+  console.log("  yeastbook import <file.ipynb>                       Convert .ipynb → .ybk");
+  console.log("  yeastbook plugin list                               List installed plugins");
+  console.log("  yeastbook plugin install <pkg>                      Install a plugin");
+  console.log("  yeastbook plugin remove <name>                      Remove a plugin");
+  console.log("");
+  console.log("Options:");
+  console.log("  --port <n>    Port to listen on (default: $PORT or 3000)");
+  console.log("  --no-open     Do not open browser after starting server");
+  console.log("  --ipynb       Use .ipynb format (with `new` command)");
+}
+
+// ---------------------------------------------------------------------------
+// Plugin subcommand
+// ---------------------------------------------------------------------------
+
+const pluginsBaseDir = join(homedir(), ".yeastbook", "plugins");
+
+async function ensurePluginsDir(): Promise<void> {
+  await mkdir(pluginsBaseDir, { recursive: true });
+}
+
+async function pluginList(): Promise<void> {
+  await ensurePluginsDir();
+  const { PluginLoader } = await import("./plugins/loader.ts");
+  const loader = new PluginLoader(pluginsBaseDir);
+  const plugins = await loader.loadAll();
+  if (plugins.length === 0) {
+    console.log("No plugins installed.");
+  } else {
+    console.log("Installed plugins:");
+    for (const p of plugins) {
+      console.log(`  - ${p.name}${p.version ? `@${p.version}` : ""}`);
+    }
+  }
+}
+
+async function pluginInstall(pkg: string): Promise<void> {
+  if (!pkg) {
+    console.error("Usage: yeastbook plugin install <pkg>");
+    process.exit(1);
+  }
+  const yeastbookDir = join(homedir(), ".yeastbook");
+  await mkdir(yeastbookDir, { recursive: true });
+  await ensurePluginsDir();
+
+  console.log(`Installing plugin: ${pkg}`);
+  const proc = Bun.spawn(["bun", "add", pkg], {
+    cwd: yeastbookDir,
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    console.error(`Failed to install plugin: ${pkg}`);
+    process.exit(exitCode);
+  }
+
+  // Derive a safe file name from the package name (strip scope/version)
+  const name = pkg.replace(/^@[^/]+\//, "").replace(/[@/].*$/, "");
+  const pluginFile = join(pluginsBaseDir, `${name}.ts`);
+  await Bun.write(pluginFile, `export { default } from "${pkg}";\n`);
+  console.log(`Plugin installed: ${name}`);
+}
+
+async function pluginRemove(name: string): Promise<void> {
+  if (!name) {
+    console.error("Usage: yeastbook plugin remove <name>");
+    process.exit(1);
+  }
+  await ensurePluginsDir();
+  const candidates = [`${name}.ts`, `${name}.js`];
+  let removed = false;
+  for (const candidate of candidates) {
+    const filePath = join(pluginsBaseDir, candidate);
+    try {
+      await unlink(filePath);
+      console.log(`Plugin removed: ${name}`);
+      removed = true;
+      break;
+    } catch {
+      // try next
+    }
+  }
+  if (!removed) {
+    console.error(`Plugin not found: ${name}`);
+    process.exit(1);
+  }
+}
+
+async function handlePlugin(subArgs: string[]): Promise<void> {
+  const sub = subArgs[0];
+  if (!sub || sub === "help") {
+    console.log("Usage:");
+    console.log("  yeastbook plugin list");
+    console.log("  yeastbook plugin install <pkg>");
+    console.log("  yeastbook plugin remove <name>");
+    process.exit(0);
+  }
+
+  if (sub === "list") {
+    await pluginList();
+  } else if (sub === "install") {
+    await pluginInstall(subArgs[1] ?? "");
+  } else if (sub === "remove") {
+    await pluginRemove(subArgs[1] ?? "");
+  } else {
+    console.error(`Unknown plugin subcommand: ${sub}`);
+    console.error("Available: list, install, remove");
+    process.exit(1);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Main dispatch
+// ---------------------------------------------------------------------------
+
+const { positional, port, noOpen, ipynb } = parseFlags(process.argv.slice(2));
+const command = positional[0];
 
 if (!command) {
-  console.log("Usage:");
-  console.log("  yeastbook new [--ipynb]           Create a new notebook (.ybk default)");
-  console.log("  yeastbook <file.ybk|file.ipynb>   Open a notebook");
-  console.log("  yeastbook export <file.ybk>       Convert .ybk → .ipynb");
-  console.log("  yeastbook import <file.ipynb>     Convert .ipynb → .ybk");
+  printUsage();
   process.exit(0);
 }
 
 if (command === "new") {
   await checkWritePermission();
-  const useIpynb = args.includes("--ipynb");
-  const ext = useIpynb ? ".ipynb" : ".ybk";
+  const ext = ipynb ? ".ipynb" : ".ybk";
   const filePath = resolve(`notebook-${Date.now()}${ext}`);
   console.log(`Creating new notebook: ${filePath}`);
 
-  const port = parseInt(process.env.PORT ?? "3000", 10);
   const server = await startServer(filePath, port);
   console.log(`Yeastbook running at http://localhost:${server.port}`);
   console.log(`Notebook: ${filePath}`);
+  if (!noOpen) {
+    Bun.openInEditor(`http://localhost:${server.port}`).catch(() => {
+      // ignore if open fails (e.g. in CI/headless)
+    });
+  }
 } else if (command === "export") {
-  const srcPath = resolve(args[1] ?? "");
+  const srcPath = resolve(positional[1] ?? "");
   if (!srcPath || !srcPath.endsWith(".ybk")) {
     console.error("Usage: yeastbook export <file.ybk>");
     process.exit(1);
   }
   const { notebook } = await loadNotebook(srcPath);
-  const ipynb = ybkToIpynb(notebook);
+  const ipynbData = ybkToIpynb(notebook);
   const destPath = join(dirname(srcPath), basename(srcPath, ".ybk") + ".ipynb");
-  await Bun.write(destPath, JSON.stringify(ipynb, null, 2) + "\n");
+  await Bun.write(destPath, JSON.stringify(ipynbData, null, 2) + "\n");
   console.log(`Exported: ${srcPath} → ${destPath}`);
 } else if (command === "import") {
-  const srcPath = resolve(args[1] ?? "");
+  const srcPath = resolve(positional[1] ?? "");
   if (!srcPath || !srcPath.endsWith(".ipynb")) {
     console.error("Usage: yeastbook import <file.ipynb>");
     process.exit(1);
@@ -63,12 +230,18 @@ if (command === "new") {
   const destPath = join(dirname(srcPath), basename(srcPath, ".ipynb") + ".ybk");
   await Bun.write(destPath, JSON.stringify(ybk, null, 2) + "\n");
   console.log(`Imported: ${srcPath} → ${destPath}`);
+} else if (command === "plugin") {
+  await handlePlugin(positional.slice(1));
 } else {
-  // Open existing notebook
+  // Open existing notebook by path
   await checkWritePermission();
   const filePath = resolve(command);
-  const port = parseInt(process.env.PORT ?? "3000", 10);
   const server = await startServer(filePath, port);
   console.log(`Yeastbook running at http://localhost:${server.port}`);
   console.log(`Notebook: ${filePath}`);
+  if (!noOpen) {
+    Bun.openInEditor(`http://localhost:${server.port}`).catch(() => {
+      // ignore if open fails (e.g. in CI/headless)
+    });
+  }
 }
