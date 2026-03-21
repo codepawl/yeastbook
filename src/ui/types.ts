@@ -1,3 +1,10 @@
+export type RichOutput =
+  | { type: "text"; text: string }
+  | { type: "json"; data: unknown }
+  | { type: "table"; rows: Record<string, unknown>[] }
+  | { type: "chart"; data: unknown[]; config: { chartType: string; xKey?: string; yKey?: string; label?: string; title?: string } }
+  | { type: "html"; html: string };
+
 export interface CellOutput {
   output_type: string;
   text?: string[];
@@ -8,6 +15,7 @@ export interface CellOutput {
   evalue?: string;
   traceback?: string[];
   name?: string;
+  richOutput?: RichOutput;
 }
 
 export interface Cell {
@@ -58,5 +66,9 @@ export type WsOutgoing =
 export type WsIncoming =
   | { type: "status"; cellId: string; status: "busy" | "idle"; executionCount?: number }
   | { type: "stream"; cellId: string; name: "stdout" | "stderr"; text: string }
-  | { type: "result"; cellId: string; value: string; executionCount: number }
-  | { type: "error"; cellId: string; ename: string; evalue: string; traceback: string[] };
+  | { type: "result"; cellId: string; value: string; executionCount: number; richOutput?: RichOutput }
+  | { type: "error"; cellId: string; ename: string; evalue: string; traceback: string[] }
+  | { type: "install_start"; cellId: string; packages: string[] }
+  | { type: "install_log"; cellId: string; text: string; stream: "stdout" | "stderr" }
+  | { type: "install_done"; cellId: string; success: true; packageDts?: Record<string, string> }
+  | { type: "install_error"; cellId: string; error: string };
