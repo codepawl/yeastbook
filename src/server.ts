@@ -103,7 +103,7 @@ export async function startServer(filePath: string, port: number = 3000) {
             headers: { "Content-Type": "text/html; charset=utf-8" },
           });
         }
-        const asset = assets["/"];
+        const asset = assets["/"]!;
         return new Response(asset.content, {
           headers: { "Content-Type": asset.mimeType },
         });

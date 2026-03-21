@@ -53,8 +53,8 @@ export function transformCellCode(code: string): string {
         // Known limitation: nested destructuring ({ a: { b } }) is not supported.
         const destructMatch = trimmedAfter.match(/^var\s+(\{[^}]+\}|\[[^\]]+\])\s*=\s*(.+)$/);
         if (destructMatch) {
-          const pattern = destructMatch[1];
-          const expr = destructMatch[2];
+          const pattern = destructMatch[1]!;
+          const expr = destructMatch[2]!;
           const names = pattern.replace(/[{}\[\]\s\.]+/g, " ").trim().split(/\s*,\s*|\s+/).filter(n => /^\w+$/.test(n));
           const assignments = names.map(n => `globalThis.${n} = ${n}`).join("; ");
           line = `${indentAfter}var ${pattern} = ${expr}; ${assignments}`;
