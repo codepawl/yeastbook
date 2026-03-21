@@ -206,11 +206,6 @@ if (command === "new") {
   const server = await startServer(filePath, port);
   console.log(`Yeastbook running at http://localhost:${server.port}`);
   console.log(`Notebook: ${filePath}`);
-  if (!noOpen) {
-    Bun.openInEditor(`http://localhost:${server.port}`).catch(() => {
-      // ignore if open fails (e.g. in CI/headless)
-    });
-  }
 } else if (command === "export") {
   const srcPath = resolve(positional[1] ?? "");
   if (!srcPath || !srcPath.endsWith(".ybk")) {
@@ -242,9 +237,4 @@ if (command === "new") {
   const server = await startServer(filePath, port);
   console.log(`Yeastbook running at http://localhost:${server.port}`);
   console.log(`Notebook: ${filePath}`);
-  if (!noOpen) {
-    Bun.openInEditor(`http://localhost:${server.port}`).catch(() => {
-      // ignore if open fails (e.g. in CI/headless)
-    });
-  }
 }
