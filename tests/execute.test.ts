@@ -1,6 +1,6 @@
 // tests/kernel.test.ts
 import { test, expect, describe } from "bun:test";
-import { executeCode } from "../src/kernel/execute.ts";
+import { executeCode } from "../packages/app/src/kernel/execute.ts";
 
 describe("executeCode", () => {
   test("returns last expression value", async () => {

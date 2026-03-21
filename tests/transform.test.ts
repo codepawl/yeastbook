@@ -1,5 +1,5 @@
 import { test, expect, describe } from "bun:test";
-import { transformCellCode } from "../src/kernel/transform.ts";
+import { transformCellCode } from "../packages/core/src/transform.ts";
 
 describe("transformCellCode", () => {
   test("converts top-level const to var", () => {
@@ -113,5 +113,23 @@ describe("transformCellCode", () => {
     const code = "if (true) {\n  var x = 1\n}";
     const result = transformCellCode(code);
     expect(result).not.toContain("globalThis.x");
+  });
+
+  test("strips export keyword from top-level declarations", () => {
+    const result = transformCellCode("export const x = 1");
+    expect(result).toContain("var x =");
+    expect(result).not.toContain("export");
+  });
+
+  test("strips export from function declarations", () => {
+    const result = transformCellCode("export function foo() { return 1 }");
+    expect(result).toContain("function foo()");
+    expect(result).not.toContain("export");
+  });
+
+  test("preserves export inside functions", () => {
+    const code = "function foo() {\n  export const x = 1\n}";
+    const result = transformCellCode(code);
+    expect(result).toContain("export const x = 1");
   });
 });

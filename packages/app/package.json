@@ -1,0 +1,8 @@
+{
+  "name": "@yeastbook/app",
+  "version": "0.0.1",
+  "bin": { "yeastbook": "./src/cli.ts" },
+  "dependencies": {
+    "@yeastbook/core": "workspace:*"
+  }
+}

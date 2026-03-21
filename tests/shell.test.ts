@@ -1,5 +1,5 @@
 import { test, expect, describe } from "bun:test";
-import { executeCode } from "../src/kernel/execute.ts";
+import { executeCode } from "../packages/app/src/kernel/execute.ts";
 
 describe("Bun Shell in cells", () => {
   test("$ is available in cell context", async () => {

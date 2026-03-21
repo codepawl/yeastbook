@@ -1,13 +1,15 @@
 import { test, expect, describe, beforeAll, afterAll } from "bun:test";
 import { unlink } from "node:fs/promises";
+import { Glob } from "bun";
 
-let server: Awaited<ReturnType<typeof import("../src/server.ts").startServer>>;
+let server: Awaited<ReturnType<typeof import("../packages/app/src/server.ts").startServer>>;
 const tmpPath = `/tmp/yeastbook-server-test-${Date.now()}.ipynb`;
 let baseUrl: string;
 let wsUrl: string;
+const cleanupPaths: string[] = [tmpPath];
 
 beforeAll(async () => {
-  const { startServer } = await import("../src/server.ts");
+  const { startServer } = await import("../packages/app/src/server.ts");
   server = await startServer(tmpPath, 0); // port 0 = random
   const port = server.port;
   baseUrl = `http://localhost:${port}`;
@@ -16,7 +18,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
   server?.stop();
-  try { await unlink(tmpPath); } catch {}
+  for (const p of cleanupPaths) {
+    try { await unlink(p); } catch {}
+  }
 });
 
 describe("HTTP routes", () => {
@@ -198,5 +202,88 @@ describe("WebSocket execution", () => {
     const result = messages.find((m) => m.type === "result");
     expect(result).toBeDefined();
     expect(result.value).toBe("99");
+  });
+});
+
+describe("New API endpoints", () => {
+  test("POST /api/new creates a new .ybk notebook", async () => {
+    const res = await fetch(`${baseUrl}/api/new`, { method: "POST" });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.fileName).toMatch(/\.ybk$/);
+    expect(data.fileFormat).toBe("ybk");
+    expect(data.cells).toBeArray();
+    // Track for cleanup
+    if (data.filePath) cleanupPaths.push(data.filePath);
+  });
+
+  test("POST /api/export/ipynb exports notebook", async () => {
+    // First load back the test ipynb
+    await fetch(`${baseUrl}/api/import`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: tmpPath }),
+    });
+    const res = await fetch(`${baseUrl}/api/export/ipynb`, { method: "POST" });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.fileName).toMatch(/\.ipynb$/);
+    expect(data.path).toBeDefined();
+    cleanupPaths.push(data.path);
+  });
+
+  test("POST /api/export/ybk exports notebook", async () => {
+    const res = await fetch(`${baseUrl}/api/export/ybk`, { method: "POST" });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.fileName).toMatch(/\.ybk$/);
+    expect(data.path).toBeDefined();
+    cleanupPaths.push(data.path);
+  });
+
+  test("POST /api/import loads a notebook", async () => {
+    const res = await fetch(`${baseUrl}/api/import`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: tmpPath }),
+    });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.fileName).toBeDefined();
+    expect(data.fileFormat).toBe("ipynb");
+    expect(data.cells).toBeArray();
+  });
+
+  test("POST /api/cells/insert inserts cell after specified cell", async () => {
+    // Add two cells
+    const res1 = await fetch(`${baseUrl}/api/cells`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "code", source: "first" }),
+    });
+    const { id: firstId } = await res1.json();
+
+    const res2 = await fetch(`${baseUrl}/api/cells`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "code", source: "third" }),
+    });
+
+    // Insert between them
+    const insertRes = await fetch(`${baseUrl}/api/cells/insert`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "code", source: "second", afterId: firstId }),
+    });
+    expect(insertRes.status).toBe(200);
+    const { id: insertedId } = await insertRes.json();
+    expect(insertedId).toBeDefined();
+
+    // Verify order
+    const nbRes = await fetch(`${baseUrl}/api/notebook`);
+    const nb = await nbRes.json();
+    const firstIdx = nb.cells.findIndex((c: any) => c.id === firstId);
+    const insertedIdx = nb.cells.findIndex((c: any) => c.id === insertedId);
+    expect(insertedIdx).toBe(firstIdx + 1);
   });
 });

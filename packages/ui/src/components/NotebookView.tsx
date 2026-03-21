@@ -1,6 +1,6 @@
 import { CodeCell } from "./CodeCell.tsx";
 import { MarkdownCell } from "./MarkdownCell.tsx";
-import type { Cell, CellOutput, Settings } from "../types.ts";
+import type { Cell, CellOutput, Settings } from "@yeastbook/core";
 
 interface Props {
   cells: Cell[];

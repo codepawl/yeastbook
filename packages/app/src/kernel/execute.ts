@@ -1,7 +1,7 @@
 // src/kernel/execute.ts
 
 import { $ } from "bun";
-import { transformCellCode } from "./transform.ts";
+import { transformCellCode } from "@yeastbook/core";
 
 export interface ExecResult {
   value: unknown;

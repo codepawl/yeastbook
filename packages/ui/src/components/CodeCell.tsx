@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback, useState } from "react";
 import Editor, { type OnMount } from "@monaco-editor/react";
 import { CellOutput } from "./CellOutput.tsx";
-import type { Cell, CellOutput as CellOutputType } from "../types.ts";
+import type { Cell, CellOutput as CellOutputType } from "@yeastbook/core";
 
 interface Props {
   cell: Cell;

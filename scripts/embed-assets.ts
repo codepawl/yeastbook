@@ -4,8 +4,8 @@
 import { resolve, join, extname } from "node:path";
 import { readdir } from "node:fs/promises";
 
-const distDir = resolve(import.meta.dirname!, "../dist");
-const outFile = resolve(import.meta.dirname!, "../src/assets.ts");
+const distDir = resolve(import.meta.dirname!, "../packages/ui/dist");
+const outFile = resolve(import.meta.dirname!, "../packages/app/src/assets.ts");
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",

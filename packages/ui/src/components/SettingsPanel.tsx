@@ -1,16 +1,17 @@
 import { useCallback } from "react";
-import type { Settings } from "../types.ts";
+import type { Settings } from "@yeastbook/core";
 
 interface Props {
   open: boolean;
   settings: Settings;
   version: string;
   bunVersion: string;
+  fileFormat: "ybk" | "ipynb";
   onClose: () => void;
   onUpdate: (settings: Settings) => void;
 }
 
-export function SettingsPanel({ open, settings, version, bunVersion, onClose, onUpdate }: Props) {
+export function SettingsPanel({ open, settings, version, bunVersion, fileFormat, onClose, onUpdate }: Props) {
   const update = useCallback(
     (patch: Partial<Settings>) => {
       const next = {
@@ -128,6 +129,10 @@ export function SettingsPanel({ open, settings, version, bunVersion, onClose, on
             <div className="settings-row">
               <span>Runtime</span>
               <span className="settings-value">Bun {bunVersion}</span>
+            </div>
+            <div className="settings-row">
+              <span>File format</span>
+              <span className="settings-value">.{fileFormat}</span>
             </div>
             <div className="settings-row">
               <span>Source</span>

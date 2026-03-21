@@ -1,23 +1,16 @@
-// src/notebook.ts — Notebook model for .ipynb files
+// src/notebook.ts — Notebook model (delegates to format.ts for persistence)
 
-export interface CellOutput {
-  output_type: string;
-  text?: string[];
-  data?: Record<string, string>;
-  metadata?: Record<string, unknown>;
-  execution_count?: number;
-  ename?: string;
-  evalue?: string;
-  traceback?: string[];
-  name?: string;
-}
+import { loadNotebook, saveNotebook, createEmptyYbk, detectFormat, ybkToIpynb } from "./format.ts";
+import type { YbkNotebook, YbkCell, YbkCellOutput, NotebookFormat } from "./format.ts";
+
+export type { YbkCellOutput as CellOutput };
 
 export interface Cell {
   cell_type: "code" | "markdown";
   id: string;
   source: string[];
   metadata: Record<string, unknown>;
-  outputs: CellOutput[];
+  outputs: YbkCellOutput[];
   execution_count: number | null;
 }
 
@@ -34,43 +27,41 @@ interface NotebookJson {
 export class Notebook {
   cells: Cell[];
   metadata: NotebookJson["metadata"];
+  ybk: YbkNotebook;
+  format: NotebookFormat;
 
-  private constructor(data: NotebookJson) {
-    this.cells = data.cells;
-    this.metadata = data.metadata;
+  private constructor(ybk: YbkNotebook, format: NotebookFormat) {
+    this.ybk = ybk;
+    this.format = format;
+    this.cells = ybk.cells.map(ybkCellToCell);
+    this.metadata = {
+      kernelspec: { name: "yeastbook", display_name: "Yeastbook (Bun)", language: "typescript" },
+      language_info: { name: "typescript" },
+    };
   }
 
   static createEmpty(): Notebook {
-    return new Notebook({
-      nbformat: 4,
-      nbformat_minor: 5,
-      metadata: {
-        kernelspec: { name: "yeastbook", display_name: "Yeastbook (Bun)", language: "typescript" },
-        language_info: { name: "typescript" },
-      },
-      cells: [],
-    });
+    return new Notebook(createEmptyYbk(), "ybk");
   }
 
   static async load(filePath: string): Promise<Notebook> {
-    const file = Bun.file(filePath);
-    if (await file.exists()) {
-      const data: NotebookJson = await file.json();
-      return new Notebook(data);
-    }
-    const nb = Notebook.createEmpty();
-    await nb.save(filePath);
-    return nb;
+    const { notebook, format } = await loadNotebook(filePath);
+    return new Notebook(notebook, format);
   }
 
   async save(filePath: string): Promise<void> {
-    const data: NotebookJson = {
-      nbformat: 4,
-      nbformat_minor: 5,
-      metadata: this.metadata,
-      cells: this.cells,
-    };
-    await Bun.write(filePath, JSON.stringify(data, null, 2) + "\n");
+    this.syncToYbk();
+    const format = detectFormat(filePath);
+    await saveNotebook(filePath, this.ybk);
+    this.format = format;
+  }
+
+  syncForExport(): void {
+    this.syncToYbk();
+  }
+
+  private syncToYbk(): void {
+    this.ybk.cells = this.cells.map(cellToYbkCell);
   }
 
   addCell(type: "code" | "markdown", source: string = ""): string {
@@ -83,6 +74,27 @@ export class Notebook {
       outputs: [],
       execution_count: null,
     };
+    this.cells.push(cell);
+    return id;
+  }
+
+  insertCellAfter(type: "code" | "markdown", source: string = "", afterId?: string): string {
+    const id = crypto.randomUUID();
+    const cell: Cell = {
+      cell_type: type,
+      id,
+      source: source ? [source] : [],
+      metadata: {},
+      outputs: [],
+      execution_count: null,
+    };
+    if (afterId) {
+      const idx = this.cells.findIndex((c) => c.id === afterId);
+      if (idx !== -1) {
+        this.cells.splice(idx + 1, 0, cell);
+        return id;
+      }
+    }
     this.cells.push(cell);
     return id;
   }
@@ -149,4 +161,31 @@ export class Notebook {
       cells: this.cells,
     };
   }
+}
+
+// --- Helpers ---
+
+function ybkCellToCell(ybk: YbkCell): Cell {
+  return {
+    cell_type: ybk.type,
+    id: ybk.id,
+    source: ybk.source ? [ybk.source] : [],
+    metadata: ybk.metadata ?? {},
+    outputs: ybk.outputs ?? [],
+    execution_count: ybk.executionCount ?? null,
+  };
+}
+
+function cellToYbkCell(cell: Cell): YbkCell {
+  const base: YbkCell = {
+    id: cell.id,
+    type: cell.cell_type,
+    source: cell.source.join(""),
+    metadata: Object.keys(cell.metadata || {}).length > 0 ? cell.metadata : undefined,
+  };
+  if (cell.cell_type === "code") {
+    base.outputs = cell.outputs?.length ? cell.outputs : [];
+    base.executionCount = cell.execution_count;
+  }
+  return base;
 }
