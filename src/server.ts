@@ -14,6 +14,7 @@ import { parseMagicCommands } from "./kernel/magic.ts";
 import { installPackages } from "./kernel/installer.ts";
 import { detectOutputType } from "./kernel/output.ts";
 import { watchNotebook, createOwnWriteMarker } from "./watcher.ts";
+import { PluginLoader } from "./plugins/loader.ts";
 
 const SETTINGS_DIR = join(homedir(), ".yeastbook");
 const SETTINGS_FILE = join(SETTINGS_DIR, "settings.json");
@@ -55,6 +56,13 @@ export async function startServer(filePath: string, port: number = 3000) {
   const notebook = await Notebook.load(absPath);
 
   const settings = await loadSettings();
+
+  // Load plugins
+  const pluginLoader = new PluginLoader(join(homedir(), ".yeastbook", "plugins"));
+  await pluginLoader.loadAll();
+  try {
+    pluginLoader.registerPlugin((await import("./plugins/builtin/vega.ts")).default);
+  } catch {}
 
   const state: ServerState = {
     notebook,
@@ -281,6 +289,25 @@ export async function startServer(filePath: string, port: number = 3000) {
           return new Response("", { headers: { "Content-Type": "text/plain" } });
         },
       },
+      "/api/plugins": {
+        GET: () => Response.json({
+          plugins: pluginLoader.getPlugins().map((p) => ({
+            name: p.name, version: p.version,
+            renderers: (p.renderers ?? []).map((r) => ({ type: r.type, displayName: r.displayName })),
+          })),
+        }),
+      },
+      "/api/plugins/:type/component": {
+        GET: (req) => {
+          const renderer = pluginLoader.getRenderers().find((r) => r.type === req.params.type);
+          if (!renderer) return new Response("Not found", { status: 404 });
+          if (renderer.componentSource) return new Response(renderer.componentSource, {
+            headers: { "Content-Type": "text/javascript; charset=utf-8" },
+          });
+          if (renderer.componentUrl) return Response.redirect(renderer.componentUrl);
+          return new Response("No component", { status: 404 });
+        },
+      },
     },
     websocket: {
       open(ws) { clients.add(ws); },
@@ -380,7 +407,16 @@ export async function startServer(filePath: string, port: number = 3000) {
                 }));
               } else if (result.value !== undefined) {
                 // Detect rich output type
-                const richOutput = detectOutputType(result.value);
+                let richOutput = detectOutputType(result.value);
+                // Check plugin renderers for types plugins can handle better
+                if (!richOutput || richOutput.type === "json" || richOutput.type === "text") {
+                  const pr = pluginLoader.findRenderer(result.value);
+                  if (pr) {
+                    try {
+                      richOutput = { type: "plugin", pluginType: pr.type, data: pr.serialize(result.value) } as any;
+                    } catch {}
+                  }
+                }
                 ws.send(JSON.stringify({
                   type: "result", cellId: msg.cellId,
                   value: Bun.inspect(result.value),
