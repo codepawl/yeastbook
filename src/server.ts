@@ -13,6 +13,7 @@ import { DEFAULT_SETTINGS } from "./ui/types.ts";
 import { parseMagicCommands } from "./kernel/magic.ts";
 import { installPackages } from "./kernel/installer.ts";
 import { detectOutputType } from "./kernel/output.ts";
+import { watchNotebook, createOwnWriteMarker } from "./watcher.ts";
 
 const SETTINGS_DIR = join(homedir(), ".yeastbook");
 const SETTINGS_FILE = join(SETTINGS_DIR, "settings.json");
@@ -61,6 +62,19 @@ export async function startServer(filePath: string, port: number = 3000) {
     executionCount: 0,
     context: {},
   };
+
+  const clients = new Set<any>();
+  const ownWriteMarker = createOwnWriteMarker();
+
+  const stopWatcher = watchNotebook(absPath, async () => {
+    try {
+      const updated = await Notebook.load(state.filePath);
+      state.notebook = updated;
+      for (const c of clients) {
+        try { c.send(JSON.stringify({ type: "notebook_updated" })); } catch {}
+      }
+    } catch {}
+  }, ownWriteMarker);
 
   const distDir = resolve(import.meta.dirname!, "../dist");
 
@@ -121,6 +135,7 @@ export async function startServer(filePath: string, port: number = 3000) {
         POST: async (req) => {
           const body = await req.json() as { type: "code" | "markdown"; source?: string };
           const id = state.notebook.addCell(body.type, body.source ?? "");
+          ownWriteMarker.mark();
           await state.notebook.save(state.filePath);
           return Response.json({ id });
         },
@@ -128,12 +143,14 @@ export async function startServer(filePath: string, port: number = 3000) {
       "/api/cells/:id": {
         DELETE: async (req) => {
           state.notebook.deleteCell(req.params.id);
+          ownWriteMarker.mark();
           await state.notebook.save(state.filePath);
           return Response.json({ ok: true });
         },
         PATCH: async (req) => {
           const body = await req.json() as { source: string };
           state.notebook.updateCellSource(req.params.id, body.source);
+          ownWriteMarker.mark();
           await state.notebook.save(state.filePath);
           return Response.json({ ok: true });
         },
@@ -142,6 +159,7 @@ export async function startServer(filePath: string, port: number = 3000) {
         POST: async (req) => {
           const body = await req.json() as { direction: "up" | "down" };
           state.notebook.moveCell(req.params.id, body.direction);
+          ownWriteMarker.mark();
           await state.notebook.save(state.filePath);
           return Response.json({ ok: true });
         },
@@ -170,6 +188,7 @@ export async function startServer(filePath: string, port: number = 3000) {
       },
       "/api/save": {
         POST: async () => {
+          ownWriteMarker.mark();
           await state.notebook.save(state.filePath);
           return Response.json({ ok: true });
         },
@@ -220,6 +239,7 @@ export async function startServer(filePath: string, port: number = 3000) {
         POST: async (req) => {
           const body = await req.json() as { type: "code" | "markdown"; source?: string; afterId?: string };
           const id = state.notebook.insertCellAfter(body.type, body.source ?? "", body.afterId);
+          ownWriteMarker.mark();
           await state.notebook.save(state.filePath);
           return Response.json({ id });
         },
@@ -263,7 +283,8 @@ export async function startServer(filePath: string, port: number = 3000) {
       },
     },
     websocket: {
-      open() {},
+      open(ws) { clients.add(ws); },
+      close(ws) { clients.delete(ws); },
       async message(ws, message) {
         try {
           const msg = JSON.parse(message as string) as
@@ -371,11 +392,13 @@ export async function startServer(filePath: string, port: number = 3000) {
               ws.send(JSON.stringify({
                 type: "status", cellId: msg.cellId, status: "idle", executionCount: state.executionCount,
               }));
+              ownWriteMarker.mark();
               await state.notebook.save(state.filePath);
             } else if (magic.length > 0) {
               // Magic-only cell: update source but send idle status
               state.notebook.updateCellSource(msg.cellId, msg.code);
               ws.send(JSON.stringify({ type: "status", cellId: msg.cellId, status: "idle" }));
+              ownWriteMarker.mark();
               await state.notebook.save(state.filePath);
             }
           }

@@ -71,4 +71,5 @@ export type WsIncoming =
   | { type: "install_start"; cellId: string; packages: string[] }
   | { type: "install_log"; cellId: string; text: string; stream: "stdout" | "stderr" }
   | { type: "install_done"; cellId: string; success: true; packageDts?: Record<string, string> }
-  | { type: "install_error"; cellId: string; error: string };
+  | { type: "install_error"; cellId: string; error: string }
+  | { type: "notebook_updated" };
