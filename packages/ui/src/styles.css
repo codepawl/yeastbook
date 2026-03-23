@@ -7,17 +7,17 @@
 :root {
   --bg-app: #F7F4EF;
   --bg-surface: #FDFCFA;
-  --bg-code: #1C1C1E;
+  --bg-code: #FDFCFA;
   --bg-output: #F7F4EF;
   --bg-header: #FDFCFA;
   --bg-toolbar: #F0EDE8;
   --border-subtle: #E8E2D9;
   --border-focus: #D97706;
-  --border-code: #2C2C2E;
+  --border-code: #E8E2D9;
   --text-primary: #1A1714;
   --text-secondary: #6B6560;
   --text-muted: #9C9590;
-  --text-code: #E8E4DC;
+  --text-code: #1A1714;
   --text-output: #1A1714;
   --accent: #D97706;
   --accent-hover: #B45309;
