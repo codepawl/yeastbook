@@ -11,6 +11,7 @@
   },
   "license": "MIT",
   "engines": { "vscode": "^1.85.0" },
+  "icon": "icon.png",
   "categories": ["Notebooks"],
   "main": "./dist/extension.js",
   "contributes": {
@@ -75,7 +76,7 @@
     }
   },
   "scripts": {
-    "build": "bun build src/extension.ts --outdir dist --target node --format cjs --external vscode --external ws",
+    "build": "bun build src/extension.ts --outdir dist --target node --format cjs --external vscode",
     "package": "bunx @vscode/vsce package --no-dependencies"
   },
   "dependencies": {
