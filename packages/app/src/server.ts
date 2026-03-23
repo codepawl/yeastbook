@@ -655,11 +655,26 @@ export async function startServer(filePath: string, port: number = 3000, devMode
                   type: "install_start", cellId: msg.cellId, packages: cmd.packages,
                 }));
 
+                const installLogs: string[] = [];
                 const result = await installPackages(cmd.packages, (text, stream) => {
+                  installLogs.push(text);
                   ws.send(JSON.stringify({
                     type: "install_log", cellId: msg.cellId, text, stream,
                   }));
                 });
+
+                // Save install output to cell so it persists on reload
+                const cell = state.notebook.getCell(msg.cellId);
+                if (cell) {
+                  const summary = result.success
+                    ? `✓ Installed ${cmd.packages.join(", ")}${result.versions ? " (" + Object.entries(result.versions).map(([p, v]) => `${p}@${v}`).join(", ") + ")" : ""}`
+                    : `✗ Install failed: ${result.error}`;
+                  cell.outputs = [
+                    ...(cell.outputs || []),
+                    { output_type: "stream", name: "stdout", text: [summary + "\n"] },
+                  ];
+                  await state.notebook.save(state.filePath);
+                }
 
                 if (result.success) {
                   // Save installed versions to notebook metadata
