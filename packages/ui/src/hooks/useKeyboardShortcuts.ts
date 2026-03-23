@@ -103,8 +103,8 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers) {
         case "ArrowUp": case "k": e.preventDefault(); h.onFocusPrev(); break;
         case "ArrowDown": case "j": e.preventDefault(); h.onFocusNext(); break;
         case "Enter":
-          if (!e.shiftKey) { e.preventDefault(); h.onEnterEdit(); }
-          else { e.preventDefault(); h.onRunCell(); }
+          if (e.ctrlKey || e.metaKey || e.shiftKey) { e.preventDefault(); h.onRunCell(); }
+          else { e.preventDefault(); h.onEnterEdit(); }
           break;
       }
     };
