@@ -5,6 +5,7 @@ export type Mode = "command" | "edit";
 interface ShortcutHandlers {
   cells: { id: string; cell_type: string }[];
   focusedCellId: string | null;
+  busyCells: Set<string>;
   mode: Mode;
   onSetMode: (mode: Mode) => void;
   onAddCellAbove: () => void;
@@ -22,6 +23,7 @@ interface ShortcutHandlers {
   onUndo: () => void;
   onRedo: () => void;
   onToggleFileExplorer: () => void;
+  onFocusCell: (cellId: string) => void;
 }
 
 export function useKeyboardShortcuts(handlers: ShortcutHandlers) {
@@ -107,7 +109,27 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers) {
       }
     };
 
+    // Shift+Tab in capturing phase — must fire before Monaco intercepts it
+    const handleShiftTab = (e: KeyboardEvent) => {
+      if (!e.shiftKey || e.key !== "Tab" || e.ctrlKey || e.metaKey) return;
+      const h = handlersRef.current;
+      const busyId = h.cells.find((c) => h.busyCells.has(c.id))?.id;
+      if (busyId) {
+        e.preventDefault();
+        e.stopPropagation();
+        const el = document.getElementById(`cell-${busyId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+          h.onFocusCell(busyId);
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleShiftTab, true); // capturing
     document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleShiftTab, true);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
   }, []);
 }
