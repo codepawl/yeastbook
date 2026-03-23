@@ -72,6 +72,7 @@ export function CodeCell({
   onOpenPaletteRef.current = onOpenPalette;
   const isPresentingRef = useRef(isPresenting);
   isPresentingRef.current = isPresenting;
+  const markerDisposableRef = useRef<any>(null);
 
   const updateHeight = useCallback(() => {
     const editor = editorRef.current;
@@ -88,7 +89,7 @@ export function CodeCell({
       noSemanticValidation: false,
       noSyntaxValidation: false,
       noSuggestionDiagnostics: true,
-      diagnosticCodesToIgnore: [2307, 2304, 1375, 1378, 2580, 7044, 2686, 2300, 2302, 2451],
+      diagnosticCodesToIgnore: [1375, 1378, 2300, 2302, 2304, 2307, 2451, 2580, 7044, 2686],
     };
     monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions(diagOpts);
     monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions(diagOpts);
@@ -229,6 +230,127 @@ export function CodeCell({
         "list.highlightForeground": "#F59E0B",
       },
     });
+
+    monaco.editor.defineTheme("yeastbook-light", {
+      base: "vs",
+      inherit: true,
+      rules: [
+        // Comments — muted warm gray, italic
+        { token: "comment", foreground: "8C8880", fontStyle: "italic" },
+        { token: "comment.doc", foreground: "6B6560", fontStyle: "italic" },
+
+        // Keywords & storage — amber accent (darker for light bg)
+        { token: "keyword", foreground: "B45309" },
+        { token: "keyword.control", foreground: "B45309" },
+        { token: "keyword.operator", foreground: "B45309" },
+        { token: "storage", foreground: "B45309" },
+        { token: "storage.type", foreground: "B45309" },
+
+        // Strings — dark sage green
+        { token: "string", foreground: "4D7C0F" },
+        { token: "string.escape", foreground: "65A30D" },
+        { token: "string.regexp", foreground: "9A3412" },
+
+        // Numbers & constants — warm brown-orange
+        { token: "number", foreground: "C2410C" },
+        { token: "number.hex", foreground: "C2410C" },
+        { token: "constant", foreground: "C2410C" },
+        { token: "constant.language", foreground: "C2410C" },
+
+        // Types — deep blue
+        { token: "type", foreground: "1D4ED8" },
+        { token: "type.identifier", foreground: "1D4ED8" },
+        { token: "support.type", foreground: "1D4ED8" },
+
+        // Functions — dark golden
+        { token: "entity.name.function", foreground: "92400E" },
+        { token: "support.function", foreground: "92400E" },
+
+        // Variables — dark warm (default text)
+        { token: "variable", foreground: "1A1714" },
+        { token: "variable.parameter", foreground: "44403C" },
+        { token: "identifier", foreground: "1A1714" },
+
+        // Operators & punctuation
+        { token: "operator", foreground: "6B6560" },
+        { token: "delimiter", foreground: "6B6560" },
+        { token: "delimiter.bracket", foreground: "6B6560" },
+
+        // JSX/HTML
+        { token: "tag", foreground: "92400E" },
+        { token: "attribute.name", foreground: "1D4ED8" },
+        { token: "attribute.value", foreground: "4D7C0F" },
+
+        // Misc
+        { token: "invalid", foreground: "DC2626" },
+      ],
+      colors: {
+        "editor.background": "#FDFCFA",
+        "editor.foreground": "#1A1714",
+        "editorCursor.foreground": "#D97706",
+
+        // Selection — amber tint
+        "editor.selectionBackground": "#F59E0B33",
+        "editor.inactiveSelectionBackground": "#F59E0B1A",
+        "editor.selectionHighlightBackground": "#F59E0B1A",
+
+        // Line highlight
+        "editor.lineHighlightBackground": "#F7F4EF",
+        "editor.lineHighlightBorder": "#00000000",
+
+        // Line numbers
+        "editorLineNumber.foreground": "#9C9590",
+        "editorLineNumber.activeForeground": "#6B6560",
+
+        // Indent guides
+        "editorIndentGuide.background": "#E8E2D9",
+        "editorIndentGuide.activeBackground": "#D6CFC5",
+
+        // Widgets (autocomplete, hover)
+        "editorWidget.background": "#FDFCFA",
+        "editorWidget.border": "#E8E2D9",
+        "editorSuggestWidget.background": "#FDFCFA",
+        "editorSuggestWidget.border": "#E8E2D9",
+        "editorSuggestWidget.selectedBackground": "#F59E0B1A",
+        "editorSuggestWidget.highlightForeground": "#B45309",
+        "editorHoverWidget.background": "#FDFCFA",
+        "editorHoverWidget.border": "#E8E2D9",
+
+        // Find/replace
+        "editor.findMatchBackground": "#F59E0B40",
+        "editor.findMatchHighlightBackground": "#F59E0B20",
+
+        // Bracket matching — amber
+        "editorBracketMatch.background": "#F59E0B26",
+        "editorBracketMatch.border": "#D9770666",
+
+        // Scrollbar
+        "scrollbarSlider.background": "#9C959033",
+        "scrollbarSlider.hoverBackground": "#9C959066",
+
+        // Gutter & ruler
+        "editorGutter.background": "#FDFCFA",
+        "editorOverviewRuler.border": "#00000000",
+
+        // Errors/warnings
+        "editorError.foreground": "#DC2626",
+        "editorWarning.foreground": "#D97706",
+        "editorInfo.foreground": "#1D4ED8",
+
+        // Whitespace
+        "editorWhitespace.foreground": "#E8E2D9",
+
+        // Input (find bar)
+        "input.background": "#F7F4EF",
+        "input.border": "#E8E2D9",
+        "focusBorder": "#D97706",
+
+        // List (autocomplete rows)
+        "list.hoverBackground": "#F59E0B1A",
+        "list.activeSelectionBackground": "#F59E0B26",
+        "list.highlightForeground": "#B45309",
+      },
+    });
   }, []);
 
   const handleEditorMount: OnMount = useCallback((editor, monaco) => {
@@ -347,14 +469,30 @@ export function CodeCell({
         }
       }, 500);
     });
+    // Suppress diagnostics on magic command lines (%install, %timeit, etc.)
+    markerDisposableRef.current?.dispose();
+    markerDisposableRef.current = monaco.editor.onDidChangeMarkers(([uri]) => {
+      const model = editor.getModel();
+      if (!model || uri.toString() !== model.uri.toString()) return;
+      const markers = monaco.editor.getModelMarkers({ resource: uri });
+      const filtered = markers.filter((m: any) => {
+        const line = model.getLineContent(m.startLineNumber);
+        return !line.trimStart().startsWith("%");
+      });
+      if (filtered.length !== markers.length) {
+        monaco.editor.setModelMarkers(model, "typescript", filtered);
+      }
+    });
+
     updateHeight();
   }, [cell.id, onSourceChange, updateHeight]);
 
   useEffect(() => { updateHeight(); }, [updateHeight]);
 
-  // Dispose Monaco model when cell unmounts to prevent memory leaks
+  // Dispose Monaco model and marker listener when cell unmounts
   useEffect(() => {
     return () => {
+      markerDisposableRef.current?.dispose();
       const monaco = monacoRef.current;
       if (monaco) {
         const modelUri = monaco.Uri.parse(`file:///cell-${cell.id}.ts`);
@@ -527,7 +665,7 @@ export function CodeCell({
           defaultLanguage="typescript"
           defaultValue={cell.source.join("\n") || ""}
           path={`cell-${cell.id}.ts`}
-          theme="yeastbook-dark"
+          theme={theme === "dark" ? "yeastbook-dark" : "yeastbook-light"}
           beforeMount={handleBeforeMount}
           onMount={handleEditorMount}
           options={{
