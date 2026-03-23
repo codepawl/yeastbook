@@ -52,6 +52,7 @@ export class YbkKernel {
     this.controller.supportedLanguages = ["typescript", "javascript"];
     this.controller.supportsExecutionOrder = true;
     this.controller.executeHandler = this.executeHandler.bind(this);
+    this.controller.interruptHandler = this.interruptHandler.bind(this);
 
     this.statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     this.statusBar.command = "yeastbook.restartKernel";
@@ -356,8 +357,9 @@ export class YbkKernel {
     cells: vscode.NotebookCell[],
     notebook: vscode.NotebookDocument,
     controller: vscode.NotebookController,
-    token: vscode.CancellationToken,
   ): Promise<void> {
+    // VS Code passes cancellation token via controller.interruptHandler, not executeHandler
+    // We use a per-cell token approach instead via the controller's interrupt
     // Ensure server is running
     if (!this.isRunning) {
       try {
@@ -371,12 +373,24 @@ export class YbkKernel {
     }
 
     for (const cell of cells) {
-      if (token.isCancellationRequested) break;
-      await this.executeCell(cell, token);
+      await this.executeCell(cell);
     }
   }
 
-  private async executeCell(cell: vscode.NotebookCell, token: vscode.CancellationToken): Promise<void> {
+  private interruptHandler(): void {
+    this.output.appendLine("Interrupt requested — cancelling all pending executions.");
+    this.interrupt();
+    for (const [cellId, pending] of this.pending) {
+      pending.execution.appendOutput(new vscode.NotebookCellOutput([
+        vscode.NotebookCellOutputItem.text("Execution interrupted.", "text/plain"),
+      ]));
+      pending.execution.end(false, Date.now());
+      pending.resolve();
+      this.pending.delete(cellId);
+    }
+  }
+
+  private async executeCell(cell: vscode.NotebookCell): Promise<void> {
     const execution = this.controller.createNotebookCellExecution(cell);
     execution.executionOrder = ++this.executionOrder;
     execution.start(Date.now());
@@ -395,20 +409,6 @@ export class YbkKernel {
 
     return new Promise<void>((resolve) => {
       this.pending.set(cellId, { execution, resolve });
-
-      // Wire cancellation token
-      const cancelDisposable = token.onCancellationRequested(() => {
-        this.output.appendLine(`Cancellation requested for cell ${cellId}`);
-        this.interrupt();
-        if (this.pending.has(cellId)) {
-          execution.appendOutput(new vscode.NotebookCellOutput([
-            vscode.NotebookCellOutputItem.text("Execution cancelled.", "text/plain"),
-          ]));
-          execution.end(false, Date.now());
-          this.pending.delete(cellId);
-          resolve();
-        }
-      });
 
       // Send execute message
       this.ws!.send(JSON.stringify({
@@ -431,12 +431,11 @@ export class YbkKernel {
         }
       }, 300000);
 
-      // Clean up timeout and cancel listener when execution completes
+      // Clean up timeout when execution completes
       this.pending.set(cellId, {
         execution,
         resolve: () => {
           clearTimeout(timeout);
-          cancelDisposable.dispose();
           resolve();
         },
       });
