@@ -1,5 +1,5 @@
 import { test, expect, describe } from "bun:test";
-import { transformCellCode } from "../packages/core/src/transform.ts";
+import { transformCellCode, transformImports } from "../packages/core/src/transform.ts";
 
 describe("transformCellCode", () => {
   test("converts top-level const to var", () => {
@@ -131,5 +131,61 @@ describe("transformCellCode", () => {
     const code = "function foo() {\n  export const x = 1\n}";
     const result = transformCellCode(code);
     expect(result).toContain("export const x = 1");
+  });
+});
+
+describe("transformImports", () => {
+  test("default import", () => {
+    expect(transformImports('import _ from "lodash"'))
+      .toBe('const _ = (await import("lodash")).default');
+  });
+
+  test("named imports", () => {
+    expect(transformImports('import { chunk, merge } from "lodash"'))
+      .toBe('const { chunk, merge } = await import("lodash")');
+  });
+
+  test("namespace import", () => {
+    expect(transformImports('import * as _ from "lodash"'))
+      .toBe('const _ = await import("lodash")');
+  });
+
+  test("default + named", () => {
+    expect(transformImports('import React, { useState } from "react"'))
+      .toBe('const { default: React, useState } = await import("react")');
+  });
+
+  test("side effect import", () => {
+    expect(transformImports('import "some-polyfill"'))
+      .toBe('await import("some-polyfill")');
+  });
+
+  test("single-quoted module", () => {
+    expect(transformImports("import _ from 'lodash'"))
+      .toBe('const _ = (await import("lodash")).default');
+  });
+
+  test("non-import lines unchanged", () => {
+    expect(transformImports("const x = 1")).toBe("const x = 1");
+  });
+
+  test("mixed imports and code", () => {
+    const code = 'import _ from "lodash"\nconst arr = [1,2,3]\narr';
+    const result = transformImports(code);
+    expect(result).toContain('(await import("lodash")).default');
+    expect(result).toContain("const arr = [1,2,3]");
+  });
+
+  test("full cell with import through transformCellCode", () => {
+    const code = 'import _ from "lodash"\nconst arr = _.chunk([1,2,3,4], 2)\narr';
+    const result = transformCellCode(code);
+    expect(result).toContain('await import("lodash")');
+    expect(result).toContain("var arr");
+    expect(result).toContain("return (arr)");
+  });
+
+  test("import with semicolons", () => {
+    expect(transformImports('import _ from "lodash";'))
+      .toBe('const _ = (await import("lodash")).default');
   });
 });
