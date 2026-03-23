@@ -11,6 +11,7 @@
   },
   "license": "MIT",
   "engines": { "vscode": "^1.85.0" },
+  "activationEvents": ["onNotebook:yeastbook"],
   "icon": "icon.png",
   "categories": ["Notebooks"],
   "main": "./dist/extension.js",
@@ -22,23 +23,10 @@
         { "filenamePattern": "*.ybk" }
       ]
     }],
-    "notebookRenderer": [{
-      "id": "yeastbook-renderer",
-      "displayName": "Yeastbook Rich Output",
-      "entrypoint": "./dist/renderer.js",
-      "mimeTypes": [
-        "x-application/yeastbook-chart",
-        "x-application/yeastbook-table",
-        "x-application/yeastbook-json",
-        "x-application/yeastbook-html",
-        "x-application/yeastbook-widget"
-      ]
-    }],
     "languages": [{
       "id": "yeastbook",
       "aliases": ["Yeastbook"],
-      "extensions": [".ybk"],
-      "icon": { "light": "icon.png", "dark": "icon.png" }
+      "extensions": [".ybk"]
     }],
     "commands": [
       { "command": "yeastbook.runAll", "title": "Yeastbook: Run All Cells", "icon": "$(run-all)" },
@@ -71,6 +59,11 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically start server when opening a notebook"
+        },
+        "yeastbook.kernelStartupTimeout": {
+          "type": "number",
+          "default": 15000,
+          "description": "Timeout in ms for kernel startup (default 15000)"
         }
       }
     }

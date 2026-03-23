@@ -1,7 +1,6 @@
 import * as vscode from "vscode";
 import { YbkSerializer } from "./YbkSerializer";
 import { YbkKernel } from "./YbkKernel";
-import { writeFileSync } from "node:fs";
 
 let kernel: YbkKernel | undefined;
 
@@ -88,7 +87,7 @@ export function activate(context: vscode.ExtensionContext) {
         ),
       });
       if (uri) {
-        writeFileSync(uri.fsPath, script);
+        await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(script));
         vscode.window.showInformationMessage(`Exported to ${uri.fsPath}`);
       }
     }),

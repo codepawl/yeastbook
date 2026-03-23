@@ -83,22 +83,28 @@ export class YbkSerializer implements vscode.NotebookSerializer {
   }
 
   serializeNotebook(data: vscode.NotebookData): Uint8Array {
-    const version = data.metadata?.version ?? "0.1.0";
-    const metadata = data.metadata?.ybkMetadata ?? {};
-    const settings = data.metadata?.ybkSettings ?? {};
+    try {
+      const version = data.metadata?.version ?? "0.1.0";
+      const metadata = data.metadata?.ybkMetadata ?? {};
+      const settings = data.metadata?.ybkSettings ?? {};
 
-    const cells: YbkCell[] = data.cells.map((cell) => {
-      const ybkCell: YbkCell = {
-        id: cell.metadata?.id ?? generateId(),
-        type: cell.kind === vscode.NotebookCellKind.Markup ? "markdown" : "code",
-        source: cell.value,
-      };
-      // Strip outputs on save for clean diffs
-      return ybkCell;
-    });
+      const cells: YbkCell[] = data.cells.map((cell) => {
+        const ybkCell: YbkCell = {
+          id: cell.metadata?.id ?? generateId(),
+          type: cell.kind === vscode.NotebookCellKind.Markup ? "markdown" : "code",
+          source: cell.value,
+        };
+        // Strip outputs on save for clean diffs
+        return ybkCell;
+      });
 
-    const ybk: YbkFile = { version, metadata, settings, cells };
-    return new TextEncoder().encode(JSON.stringify(ybk, null, 2) + "\n");
+      const ybk: YbkFile = { version, metadata, settings, cells };
+      return new TextEncoder().encode(JSON.stringify(ybk, null, 2) + "\n");
+    } catch (e) {
+      vscode.window.showErrorMessage(`Failed to serialize notebook: ${e instanceof Error ? e.message : e}`);
+      // Return empty JSON to avoid data loss — VS Code will show the error
+      return new TextEncoder().encode("{}");
+    }
   }
 }
 
@@ -159,5 +165,5 @@ function mapOutput(output: YbkOutput): vscode.NotebookCellOutput {
 }
 
 function generateId(): string {
-  return `cell-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  return crypto.randomUUID();
 }

@@ -31,6 +31,9 @@ export class YbkKernel {
   private notebookPath: string = "";
   private statusBar: vscode.StatusBarItem;
   private executionOrder = 0;
+  private output: vscode.OutputChannel;
+  private retryCount = 0;
+  private maxRetries = 5;
 
   // Pending executions: cellId → { execution, resolve }
   private pending = new Map<string, {
@@ -38,10 +41,9 @@ export class YbkKernel {
     resolve: () => void;
   }>();
 
-  // Buffer for messages that arrive before execution is set up
-  private messageListeners: ((msg: WsIncoming) => void)[] = [];
-
   constructor(private context: vscode.ExtensionContext) {
+    this.output = vscode.window.createOutputChannel("Yeastbook");
+
     this.controller = vscode.notebooks.createNotebookController(
       "yeastbook-kernel",
       "yeastbook",
@@ -55,7 +57,7 @@ export class YbkKernel {
     this.statusBar.command = "yeastbook.restartKernel";
     this.setStatus("stopped");
 
-    context.subscriptions.push(this.controller, this.statusBar);
+    context.subscriptions.push(this.controller, this.statusBar, this.output);
   }
 
   get serverPort(): number {
@@ -86,56 +88,95 @@ export class YbkKernel {
     this.notebookPath = notebookPath;
     this.setStatus("starting");
 
-    const config = vscode.workspace.getConfiguration("yeastbook");
-    const configPort = config.get<number>("serverPort", 0);
-    this.port = configPort || await this.findFreePort();
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: "Starting Bun Kernel...",
+        cancellable: false,
+      },
+      async () => {
+        const config = vscode.workspace.getConfiguration("yeastbook");
+        const configPort = config.get<number>("serverPort", 0);
+        this.port = configPort || await this.findFreePort();
 
-    const bunPath = config.get<string>("bunPath", "bun");
-    const cliPath = this.findYeastbook();
-    if (!cliPath) {
-      this.setStatus("error");
-      throw new Error("yeastbook CLI not found. Install: bun install -g yeastbook");
-    }
-
-    this.process = spawn(bunPath, [cliPath, notebookPath, "--port", String(this.port), "--no-open"], {
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error("Kernel startup timed out")), 15000);
-      this.process!.stdout?.on("data", (d: Buffer) => {
-        if (d.toString().includes("running at")) {
-          clearTimeout(timeout);
-          resolve();
+        const bunPath = config.get<string>("bunPath", "bun");
+        const cliPath = this.findYeastbook();
+        if (!cliPath) {
+          this.setStatus("error");
+          throw new Error("yeastbook CLI not found. Install: bun install -g yeastbook");
         }
-      });
-      this.process!.stderr?.on("data", (d: Buffer) => {
-        const msg = d.toString();
-        if (msg.includes("error") || msg.includes("Error")) {
-          console.error("[yeastbook stderr]", msg);
-        }
-      });
-      this.process!.on("error", (e) => { clearTimeout(timeout); reject(e); });
-      this.process!.on("exit", (code) => {
-        if (code) { clearTimeout(timeout); reject(new Error(`Server exited with code ${code}`)); }
-      });
-    });
 
-    await this.connectWebSocket();
-    this.setStatus("idle");
+        this.output.appendLine(`Starting server: ${bunPath} ${cliPath} ${notebookPath} --port ${this.port}`);
+
+        this.process = spawn(bunPath, [cliPath, notebookPath, "--port", String(this.port), "--no-open"], {
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+
+        const startupTimeout = config.get<number>("kernelStartupTimeout", 15000);
+
+        await new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(() => reject(new Error("Kernel startup timed out")), startupTimeout);
+          this.process!.stdout?.on("data", (d: Buffer) => {
+            const text = d.toString();
+            this.output.appendLine(`[stdout] ${text.trimEnd()}`);
+            if (text.includes("running at")) {
+              clearTimeout(timeout);
+              resolve();
+            }
+          });
+          this.process!.stderr?.on("data", (d: Buffer) => {
+            const msg = d.toString();
+            this.output.appendLine(`[stderr] ${msg.trimEnd()}`);
+          });
+          this.process!.on("error", (e) => {
+            this.output.appendLine(`[error] Process error: ${e.message}`);
+            clearTimeout(timeout);
+            reject(e);
+          });
+          this.process!.on("exit", (code) => {
+            if (code) {
+              this.output.appendLine(`[exit] Server exited with code ${code}`);
+              clearTimeout(timeout);
+              reject(new Error(`Server exited with code ${code}`));
+            }
+          });
+        });
+
+        await this.connectWebSocket();
+        this.output.appendLine("Server started and WebSocket connected.");
+        this.setStatus("idle");
+      },
+    );
   }
 
   async stopServer(): Promise<void> {
     this.ws?.close();
     this.ws = null;
+
     if (this.process && !this.process.killed) {
-      this.process.kill();
+      const proc = this.process;
+      proc.kill();
+
+      // SIGKILL fallback after 3 seconds
+      const killTimeout = setTimeout(() => {
+        try {
+          if (!proc.killed) {
+            this.output.appendLine("Process did not exit after SIGTERM, sending SIGKILL.");
+            proc.kill("SIGKILL");
+          }
+        } catch { /* already dead */ }
+      }, 3000);
+
+      proc.on("exit", () => clearTimeout(killTimeout));
     }
+
     this.process = null;
     this.notebookPath = "";
     this.port = 0;
     this.executionOrder = 0;
+    this.retryCount = 0;
     this.setStatus("stopped");
+    this.output.appendLine("Server stopped.");
 
     // Reject any pending executions
     for (const [, pending] of this.pending) {
@@ -148,12 +189,15 @@ export class YbkKernel {
   private async connectWebSocket(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const url = `ws://localhost:${this.port}/ws`;
+      this.output.appendLine(`Connecting WebSocket to ${url}`);
       this.ws = new WebSocket(url);
 
       const timeout = setTimeout(() => reject(new Error("WebSocket connection timed out")), 5000);
 
       this.ws.on("open", () => {
         clearTimeout(timeout);
+        this.retryCount = 0;
+        this.output.appendLine("WebSocket connected.");
         resolve();
       });
 
@@ -165,29 +209,43 @@ export class YbkKernel {
       });
 
       this.ws.on("close", () => {
+        this.output.appendLine("WebSocket disconnected.");
+
+        // End all pending executions with error
+        for (const [cellId, pending] of this.pending) {
+          pending.execution.appendOutput(new vscode.NotebookCellOutput([
+            vscode.NotebookCellOutputItem.error(new Error("Connection lost")),
+          ]));
+          pending.execution.end(false, Date.now());
+          pending.resolve();
+          this.pending.delete(cellId);
+        }
+
         if (this.isRunning) {
           this.setStatus("error");
-          // Try to reconnect after a brief delay
-          setTimeout(() => {
-            if (this.isRunning) this.connectWebSocket().catch(() => {});
-          }, 2000);
+          this.retryCount++;
+          if (this.retryCount <= this.maxRetries) {
+            const delay = Math.min(1000 * Math.pow(2, this.retryCount - 1), 30000);
+            this.output.appendLine(`Reconnecting in ${delay}ms (attempt ${this.retryCount}/${this.maxRetries})...`);
+            setTimeout(() => {
+              if (this.isRunning) this.connectWebSocket().catch(() => {});
+            }, delay);
+          } else {
+            this.output.appendLine("Max reconnection attempts reached. Giving up.");
+            this.setStatus("error");
+          }
         }
       });
 
       this.ws.on("error", (err) => {
         clearTimeout(timeout);
-        console.error("[yeastbook ws]", err.message);
+        this.output.appendLine(`WebSocket error: ${err.message}`);
         reject(err);
       });
     });
   }
 
   private handleMessage(msg: WsIncoming): void {
-    // Dispatch to any registered listeners
-    for (const listener of this.messageListeners) {
-      listener(msg);
-    }
-
     const cellId = msg.cellId;
     if (!cellId) {
       // Non-cell messages (status updates, etc.)
@@ -298,6 +356,7 @@ export class YbkKernel {
     cells: vscode.NotebookCell[],
     notebook: vscode.NotebookDocument,
     controller: vscode.NotebookController,
+    token: vscode.CancellationToken,
   ): Promise<void> {
     // Ensure server is running
     if (!this.isRunning) {
@@ -312,11 +371,12 @@ export class YbkKernel {
     }
 
     for (const cell of cells) {
-      await this.executeCell(cell);
+      if (token.isCancellationRequested) break;
+      await this.executeCell(cell, token);
     }
   }
 
-  private async executeCell(cell: vscode.NotebookCell): Promise<void> {
+  private async executeCell(cell: vscode.NotebookCell, token: vscode.CancellationToken): Promise<void> {
     const execution = this.controller.createNotebookCellExecution(cell);
     execution.executionOrder = ++this.executionOrder;
     execution.start(Date.now());
@@ -336,12 +396,28 @@ export class YbkKernel {
     return new Promise<void>((resolve) => {
       this.pending.set(cellId, { execution, resolve });
 
+      // Wire cancellation token
+      const cancelDisposable = token.onCancellationRequested(() => {
+        this.output.appendLine(`Cancellation requested for cell ${cellId}`);
+        this.interrupt();
+        if (this.pending.has(cellId)) {
+          execution.appendOutput(new vscode.NotebookCellOutput([
+            vscode.NotebookCellOutputItem.text("Execution cancelled.", "text/plain"),
+          ]));
+          execution.end(false, Date.now());
+          this.pending.delete(cellId);
+          resolve();
+        }
+      });
+
       // Send execute message
       this.ws!.send(JSON.stringify({
         type: "execute",
         cellId,
         code,
       }));
+
+      this.output.appendLine(`Executing cell ${cellId}`);
 
       // Timeout safety: resolve after 5 minutes if no response
       const timeout = setTimeout(() => {
@@ -355,13 +431,13 @@ export class YbkKernel {
         }
       }, 300000);
 
-      // Clean up timeout when execution completes
-      const originalResolve = resolve;
+      // Clean up timeout and cancel listener when execution completes
       this.pending.set(cellId, {
         execution,
         resolve: () => {
           clearTimeout(timeout);
-          originalResolve();
+          cancelDisposable.dispose();
+          resolve();
         },
       });
     });

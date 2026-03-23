@@ -1,4 +1,7 @@
+.vscode/**
 src/**
 tsconfig.json
+icon.svg
+*.vsix
 node_modules/**
 !dist/**
