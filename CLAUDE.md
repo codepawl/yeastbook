@@ -1,14 +1,12 @@
 ## Branching Strategy
 
 - **`main`** — production only, stable releases
-- **`staging`** — pre-production, testing
-- **`feature/<name>`** — one branch per feature, branched off staging
+- **`staging`** — development, commit directly here
 - **`hotfix/<name>`** — urgent fixes branched off main
 
 ### Rules
-- Never commit directly to main or staging
-- All feature work: create `feature/<name>` off staging
-- When feature done: merge into staging (with `--no-ff`)
+- Commit directly to staging (no feature branches)
+- Never commit directly to main
 - When staging tested and stable: merge staging into main + tag release
 - Hotfixes: branch off main, merge back to both main AND staging
 
