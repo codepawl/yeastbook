@@ -56,12 +56,10 @@
     "packages/vscode": {
       "name": "vscode-yeastbook",
       "version": "0.0.1",
-      "dependencies": {
-        "ws": "^8.18.0",
-      },
       "devDependencies": {
         "@types/vscode": "^1.85.0",
         "@types/ws": "^8.5.0",
+        "ws": "^8.18.0",
       },
     },
   },

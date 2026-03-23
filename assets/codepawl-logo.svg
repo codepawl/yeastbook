@@ -1,0 +1,19 @@
+<svg
+  width="280"
+  height="280"
+  viewBox="0 0 280 280"
+  fill="none"
+  xmlns="http://www.w3.org/2000/svg"
+>
+  <!-- Top left toe -->
+  <rect x="60" y="70" width="45" height="50" rx="22" fill="#222222" />
+
+  <!-- Top center toe -->
+  <rect x="118" y="55" width="45" height="50" rx="22" fill="#222222" />
+
+  <!-- Top right toe -->
+  <rect x="175" y="70" width="45" height="50" rx="22" fill="#222222" />
+
+  <!-- Main paw pad -->
+  <rect x="75" y="135" width="130" height="100" rx="35" fill="#222222" />
+</svg>

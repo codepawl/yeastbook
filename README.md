@@ -1,9 +1,16 @@
-# yeastbook
+<p align="center">
+  <img src="assets/yeastbook-logo.png" alt="Yeastbook" width="100" />
+</p>
 
-[![CI](https://github.com/nxank4/yeastbook/actions/workflows/ci.yml/badge.svg)](https://github.com/nxank4/yeastbook/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+<h1 align="center">yeastbook</h1>
 
-**A TypeScript notebook powered by Bun.** One command, zero config. No Python, no conda, no kernel installs.
+<p align="center">
+  <a href="https://github.com/nxank4/yeastbook/actions/workflows/ci.yml"><img src="https://github.com/nxank4/yeastbook/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" /></a>
+  <a href="https://marketplace.visualstudio.com/items?itemName=codepawl.vscode-yeastbook"><img src="https://img.shields.io/visual-studio-marketplace/v/codepawl.vscode-yeastbook?label=VS%20Code" alt="VS Code Marketplace" /></a>
+</p>
+
+<p align="center"><strong>A TypeScript notebook powered by Bun.</strong> One command, zero config. No Python, no conda, no kernel installs.</p>
 
 ```bash
 bunx yeastbook new
@@ -104,4 +111,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). PRs welcome!
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) — Made by [CodePawl](https://github.com/nxank4)

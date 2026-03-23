@@ -70,13 +70,11 @@
   },
   "scripts": {
     "build": "bun build src/extension.ts --outdir dist --target node --format cjs --external vscode",
-    "package": "bunx @vscode/vsce package --no-dependencies"
-  },
-  "dependencies": {
-    "ws": "^8.18.0"
+    "package": "rm -rf node_modules && bunx @vscode/vsce package --no-dependencies"
   },
   "devDependencies": {
     "@types/vscode": "^1.85.0",
-    "@types/ws": "^8.5.0"
+    "@types/ws": "^8.5.0",
+    "ws": "^8.18.0"
   }
 }
