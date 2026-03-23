@@ -882,6 +882,7 @@ export function App() {
   useKeyboardShortcuts({
     cells,
     focusedCellId,
+    busyCells,
     mode,
     onSetMode: setMode,
     onAddCellAbove: handleAddCellAbove,
@@ -899,6 +900,7 @@ export function App() {
     onUndo: history.undo,
     onRedo: history.redo,
     onToggleFileExplorer: () => setLeftSidebarOpen((p) => !p),
+    onFocusCell: (cellId: string) => setFocusedCellId(cellId),
   });
 
   return (
