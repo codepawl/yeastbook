@@ -274,19 +274,31 @@ export function CodeCell({
     });
   }, [ctxMenu]);
 
+  const getOutputText = useCallback((outputs: any[]) => {
+    return outputs.map((o: any) => {
+      if (o.text) return o.text.join("");
+      if (o.data?.["text/plain"]) return o.data["text/plain"];
+      if (o.output_type === "error") {
+        const parts = [o.ename && o.evalue ? `${o.ename}: ${o.evalue}` : o.evalue || ""];
+        if (o.traceback?.length) parts.push(o.traceback.join("\n"));
+        return parts.filter(Boolean).join("\n");
+      }
+      return "";
+    }).filter(Boolean).join("\n");
+  }, []);
+
   const copyInputAndOutput = useCallback(() => {
     const input = sourceRef.current;
-    const output = displayOutputs.map((o: any) => o.text?.join?.("") || o.data?.["text/plain"] || o.evalue || "").filter(Boolean).join("\n");
+    const output = getOutputText(displayOutputs);
     const combined = output ? `${input}\n\n--- Output ---\n${output}` : input;
     navigator.clipboard.writeText(combined);
-  }, [displayOutputs]);
+  }, [displayOutputs, getOutputText]);
 
   const buildCtxItems = useCallback((): ContextMenuItem[] => {
     if (ctxMenu?.zone === "output") {
       return [
         { id: "copy-output", label: "Copy Output Text", icon: "bi bi-clipboard", onClick: () => {
-          const text = displayOutputs.map((o: any) => o.text?.join?.("") || o.data?.["text/plain"] || "").join("\n");
-          navigator.clipboard.writeText(text);
+          navigator.clipboard.writeText(getOutputText(displayOutputs));
         }},
         { id: "copy-both", label: "Copy Input + Output", icon: "bi bi-clipboard2-plus", onClick: copyInputAndOutput },
         { id: "clear-output", label: "Clear Output", icon: "bi bi-eraser", onClick: () => onClear(cell.id) },
