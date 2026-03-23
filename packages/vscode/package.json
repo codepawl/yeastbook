@@ -8,23 +8,75 @@
   "categories": ["Notebooks"],
   "main": "./dist/extension.js",
   "contributes": {
-    "customEditors": [{
-      "viewType": "yeastbook.notebook",
+    "notebooks": [{
+      "type": "yeastbook",
       "displayName": "Yeastbook Notebook",
       "selector": [
-        { "filenamePattern": "*.ybk" },
-        { "filenamePattern": "*.ipynb" }
-      ],
-      "priority": "default"
+        { "filenamePattern": "*.ybk" }
+      ]
+    }],
+    "notebookRenderer": [{
+      "id": "yeastbook-renderer",
+      "displayName": "Yeastbook Rich Output",
+      "entrypoint": "./dist/renderer.js",
+      "mimeTypes": [
+        "x-application/yeastbook-chart",
+        "x-application/yeastbook-table",
+        "x-application/yeastbook-json",
+        "x-application/yeastbook-html",
+        "x-application/yeastbook-widget"
+      ]
+    }],
+    "languages": [{
+      "id": "yeastbook",
+      "aliases": ["Yeastbook"],
+      "extensions": [".ybk"],
+      "icon": { "light": "icon.png", "dark": "icon.png" }
     }],
     "commands": [
-      { "command": "yeastbook.newNotebook", "title": "Yeastbook: New Notebook" },
-      { "command": "yeastbook.restartKernel", "title": "Yeastbook: Restart Kernel" }
-    ]
+      { "command": "yeastbook.runAll", "title": "Yeastbook: Run All Cells", "icon": "$(run-all)" },
+      { "command": "yeastbook.restartKernel", "title": "Yeastbook: Restart Kernel", "icon": "$(debug-restart)" },
+      { "command": "yeastbook.openInBrowser", "title": "Yeastbook: Open in Browser", "icon": "$(globe)" },
+      { "command": "yeastbook.exportScript", "title": "Yeastbook: Export as Script" },
+      { "command": "yeastbook.stripOutputs", "title": "Yeastbook: Strip Outputs" }
+    ],
+    "menus": {
+      "notebook/toolbar": [
+        { "command": "yeastbook.runAll", "group": "navigation/execute@1", "when": "notebookType == yeastbook" },
+        { "command": "yeastbook.restartKernel", "group": "navigation/execute@2", "when": "notebookType == yeastbook" },
+        { "command": "yeastbook.openInBrowser", "group": "navigation/execute@3", "when": "notebookType == yeastbook" }
+      ]
+    },
+    "configuration": {
+      "title": "Yeastbook",
+      "properties": {
+        "yeastbook.serverPort": {
+          "type": "number",
+          "default": 0,
+          "description": "Fixed port for yeastbook server (0 = auto)"
+        },
+        "yeastbook.bunPath": {
+          "type": "string",
+          "default": "bun",
+          "description": "Path to bun executable"
+        },
+        "yeastbook.autoStartServer": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically start server when opening a notebook"
+        }
+      }
+    }
   },
   "scripts": {
-    "build": "bun build src/extension.ts --outdir dist --target node --format cjs --external vscode",
+    "build": "bun build src/extension.ts --outdir dist --target node --format cjs --external vscode --external ws",
     "package": "bunx @vscode/vsce package --no-dependencies"
   },
-  "devDependencies": { "@types/vscode": "^1.85.0" }
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/ws": "^8.5.0"
+  }
 }
