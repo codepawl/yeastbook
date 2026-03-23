@@ -31,7 +31,7 @@ export function App() {
   const [fileName, setFileName] = useState("notebook.ipynb");
   const [saved, setSaved] = useState(true);
   const [theme, setTheme] = useState<"light" | "dark">(getInitialTheme);
-  const [settings, setSettings] = useState<Settings>({ ...DEFAULT_SETTINGS, appearance: { theme: getInitialTheme() } });
+  const [settings, setSettings] = useState<Settings>({ ...DEFAULT_SETTINGS, appearance: { ...DEFAULT_SETTINGS.appearance, theme: getInitialTheme() } });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [version, setVersion] = useState("");
   const [bunVersion, setBunVersion] = useState("");
@@ -98,7 +98,7 @@ export function App() {
     setTheme((t) => {
       const next = t === "light" ? "dark" : "light";
       setSettings((s) => {
-        const updated = { ...s, appearance: { theme: next } };
+        const updated = { ...s, appearance: { ...s.appearance, theme: next as "light" | "dark" } };
         fetch("/api/settings", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -379,7 +379,7 @@ export function App() {
       const idx = cellsRef.current.findIndex((c) => c.id === cellId);
       if (idx >= 0 && idx < cellsRef.current.length - 1) {
         // Focus next existing cell
-        focusCellEditor(cellsRef.current[idx + 1].id);
+        focusCellEditor(cellsRef.current[idx + 1]!.id);
       } else if (idx === cellsRef.current.length - 1) {
         // Last cell — create a new one and focus it
         const res = await fetch("/api/cells/insert", {
@@ -478,7 +478,7 @@ export function App() {
       const t = direction === "up" ? i - 1 : i + 1;
       if (t < 0 || t >= prev.length) return prev;
       const next = [...prev];
-      [next[i], next[t]] = [next[t], next[i]];
+      [next[i], next[t]] = [next[t]!, next[i]!];
       return next;
     });
     setSaved(true);
@@ -491,7 +491,7 @@ export function App() {
     setCells((prev) => {
       const next = [...prev];
       const [moved] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, moved);
+      next.splice(toIndex, 0, moved!);
       return next;
     });
     await fetch(`/api/cells/${cellId}/reorder`, {
@@ -710,7 +710,7 @@ export function App() {
   const handleFocusPrev = useCallback(() => {
     setCells((prev) => {
       const idx = prev.findIndex((c) => c.id === focusedCellId);
-      if (idx > 0) setFocusedCellId(prev[idx - 1].id);
+      if (idx > 0) setFocusedCellId(prev[idx - 1]!.id);
       return prev;
     });
   }, [focusedCellId]);
@@ -718,7 +718,7 @@ export function App() {
   const handleFocusNext = useCallback(() => {
     setCells((prev) => {
       const idx = prev.findIndex((c) => c.id === focusedCellId);
-      if (idx >= 0 && idx < prev.length - 1) setFocusedCellId(prev[idx + 1].id);
+      if (idx >= 0 && idx < prev.length - 1) setFocusedCellId(prev[idx + 1]!.id);
       return prev;
     });
   }, [focusedCellId]);
@@ -918,7 +918,7 @@ export function App() {
   const handleFontSizeIncrease = useCallback(() => {
     setSettings((s) => {
       const idx = FONT_SIZES.indexOf(s.editor.fontSize);
-      const next = idx < FONT_SIZES.length - 1 ? FONT_SIZES[idx + 1] : s.editor.fontSize;
+      const next = idx < FONT_SIZES.length - 1 ? FONT_SIZES[idx + 1]! : s.editor.fontSize;
       const updated = { ...s, editor: { ...s.editor, fontSize: next } };
       fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updated) });
       return updated;
@@ -928,7 +928,7 @@ export function App() {
   const handleFontSizeDecrease = useCallback(() => {
     setSettings((s) => {
       const idx = FONT_SIZES.indexOf(s.editor.fontSize);
-      const next = idx > 0 ? FONT_SIZES[idx - 1] : s.editor.fontSize;
+      const next = idx > 0 ? FONT_SIZES[idx - 1]! : s.editor.fontSize;
       const updated = { ...s, editor: { ...s.editor, fontSize: next } };
       fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updated) });
       return updated;

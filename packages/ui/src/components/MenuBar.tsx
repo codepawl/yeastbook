@@ -294,7 +294,7 @@ export function MenuBar(props: Props) {
                             <button
                               key={j}
                               className={`menu-item ${"disabled" in sub && sub.disabled ? "disabled" : ""}`}
-                              onClick={() => { if (!("disabled" in sub) || !sub.disabled) { sub.action(); closeAll(); } }}
+                              onClick={() => { if (!("disabled" in sub) || !sub.disabled) { if ("action" in sub) { sub.action(); } closeAll(); } }}
                             >
                               <span className="menu-item-label">{"checked" in sub ? <i className={sub.checked ? "bi bi-check-lg" : ""} style={{ width: 16, display: "inline-block" }} /> : sub.icon && <i className={sub.icon} />} {sub.label}</span>
                               {"shortcut" in sub && sub.shortcut && <span className="menu-shortcut">{sub.shortcut}</span>}

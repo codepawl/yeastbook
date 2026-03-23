@@ -13,7 +13,7 @@ export function DataTable({ rows }: Props) {
 
   const columns = useMemo(() => {
     if (rows.length === 0) return [];
-    return Object.keys(rows[0]);
+    return Object.keys(rows[0]!);
   }, [rows]);
 
   const sorted = useMemo(() => {

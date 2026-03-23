@@ -28,7 +28,7 @@ function applyForward(cells: Cell[], entry: HistoryEntry): Cell[] {
     case "move_cell": {
       const arr = [...cells];
       const [moved] = arr.splice(entry.fromIndex, 1);
-      arr.splice(entry.toIndex, 0, moved);
+      arr.splice(entry.toIndex, 0, moved!);
       return arr;
     }
     case "change_type":
@@ -59,7 +59,7 @@ function applyReverse(cells: Cell[], entry: HistoryEntry): Cell[] {
     case "move_cell": {
       const arr = [...cells];
       const [moved] = arr.splice(entry.toIndex, 1);
-      arr.splice(entry.fromIndex, 0, moved);
+      arr.splice(entry.fromIndex, 0, moved!);
       return arr;
     }
     case "change_type":

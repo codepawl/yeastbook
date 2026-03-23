@@ -471,7 +471,7 @@ export function CodeCell({
     });
     // Suppress diagnostics on magic command lines (%install, %timeit, etc.)
     markerDisposableRef.current?.dispose();
-    markerDisposableRef.current = monaco.editor.onDidChangeMarkers(([uri]) => {
+    markerDisposableRef.current = monaco.editor.onDidChangeMarkers(([uri]: any[]) => {
       const model = editor.getModel();
       if (!model || uri.toString() !== model.uri.toString()) return;
       const markers = monaco.editor.getModelMarkers({ resource: uri });

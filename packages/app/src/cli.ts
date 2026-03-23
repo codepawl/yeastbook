@@ -45,8 +45,8 @@ function parseFlags(argv: string[]): ParsedArgs {
         console.error("Error: --port requires a numeric argument.");
         process.exit(1);
       }
-    } else if (arg.startsWith("--port=")) {
-      port = parseInt(arg.slice("--port=".length), 10);
+    } else if (arg!.startsWith("--port=")) {
+      port = parseInt(arg!.slice("--port=".length), 10);
     } else if (arg === "--no-open") {
       noOpen = true;
     } else if (arg === "--ipynb") {
@@ -60,7 +60,7 @@ function parseFlags(argv: string[]): ParsedArgs {
         i++;
       }
     } else {
-      positional.push(arg);
+      positional.push(arg!);
     }
   }
 
@@ -141,7 +141,7 @@ async function promptDevNotebook(): Promise<string | null> {
   const choice = parseInt(response || "1", 10);
   let chosen: string | null = null;
   if (choice >= 1 && choice <= notebooks.length) {
-    chosen = notebooks[choice - 1].path;
+    chosen = notebooks[choice - 1]!.path;
   }
 
   // Save choice so --watch restarts don't re-prompt

@@ -1,45 +1,65 @@
 # yeastbook
 
-A standalone TypeScript notebook powered by [Bun](https://bun.sh). Think Jupyter, but for TypeScript — no Python, no conda, no kernel installs.
+[![CI](https://github.com/nxank4/yeastbook/actions/workflows/ci.yml/badge.svg)](https://github.com/nxank4/yeastbook/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## Quick Start
+**A TypeScript notebook powered by Bun.** One command, zero config. No Python, no conda, no kernel installs.
 
 ```bash
-# Run instantly (no install)
+bunx yeastbook new
+```
+
+## Why not Jupyter?
+
+| | Jupyter | Marimo | **Yeastbook** |
+|---|---------|--------|---------------|
+| Language | Python (+ kernels) | Python | **TypeScript/JavaScript** |
+| Runtime | IPython + ZeroMQ | Python | **Bun** (fast, single binary) |
+| Setup | conda/pip + kernel install | pip install | **`bunx` or single binary** |
+| Top-level await | No | No | **Yes** |
+| Type checking | No | No | **Monaco + TypeScript** |
+| Format | .ipynb (complex JSON) | .py | **.ybk** (simple JSON) + .ipynb |
+| Package install | `%pip install` | `import` | **`%install lodash`** |
+
+**Yeastbook is for developers who think in TypeScript** and want a notebook that starts in 1 second, not 30.
+
+## Features
+
+- **Zero config** — one command to start. No kernel setup, no config files
+- **TypeScript native** — full TypeScript with Monaco editor, IntelliSense, and type checking
+- **Top-level await** — `const data = await fetch(...)` just works
+- **Variable sharing** — variables defined in one cell are available in the next
+- **Rich output** — charts (Chart.js), data tables, JSON trees, HTML, images
+- **Live streaming** — console.log streams to the browser in real-time
+- **Jupyter compatible** — import/export `.ipynb` files
+- **Session persistence** — variables survive server restart (24h)
+- **Light & dark themes** — warm minimal aesthetic with amber accents
+- **Self-contained binary** — download a single file, no runtime needed
+- **Presentation mode** — present notebooks as clean slides (Ctrl+Shift+E)
+
+## Install
+
+```bash
+# Run instantly (no install needed)
 bunx yeastbook new
 
 # Or install globally
 bun install -g yeastbook
 yeastbook new
+
+# Or download a binary (no Bun required)
+curl -fsSL https://github.com/nxank4/yeastbook/releases/latest/download/install.sh | bash
 ```
 
-## Features
-
-- **Zero config** — one command to start. No kernel setup, no config files.
-- **TypeScript native** — write TypeScript/JavaScript in cells, executed by Bun.
-- **Top-level await** — `const data = await fetch(...)` just works.
-- **Variable sharing** — variables defined in one cell are available in the next.
-- **Live output** — console.log streams to the browser in real-time via WebSocket.
-- **Jupyter compatible** — import/export `.ipynb` files.
-- **Light & dark themes** — switch in the UI or settings.
-- **Self-contained binary** — download a single file, no runtime needed.
-
-## CLI Commands
+## CLI
 
 ```bash
-yeastbook new              # Create a new .ybk notebook
-yeastbook new --ipynb      # Create a new .ipynb notebook
-yeastbook <file>           # Open an existing notebook
-yeastbook export <f.ybk>   # Convert .ybk → .ipynb
-yeastbook import <f.ipynb>  # Convert .ipynb → .ybk
+yeastbook new                # Create a new .ybk notebook
+yeastbook new --ipynb        # Create a new .ipynb notebook
+yeastbook <file>             # Open an existing notebook
+yeastbook export <file.ybk>  # Convert .ybk -> .ipynb
+yeastbook import <file.ipynb> # Convert .ipynb -> .ybk
 ```
-
-## .ybk Format
-
-Yeastbook uses `.ybk` — a simplified notebook format. It's JSON with:
-- Single-string cell sources (not arrays)
-- Embedded settings (theme, font size, etc.)
-- Full round-trip compatibility with Jupyter `.ipynb`
 
 ## Keyboard Shortcuts
 
@@ -47,19 +67,41 @@ Yeastbook uses `.ybk` — a simplified notebook format. It's JSON with:
 |----------|--------|
 | `Shift+Enter` | Run cell & advance |
 | `Ctrl+Enter` | Run cell & stay |
-| `Ctrl+S` | Save notebook |
+| `Ctrl+S` | Save |
+| `Ctrl+Shift+E` | Toggle presentation mode |
+| `Ctrl+Shift+P` | Command palette |
+| `A` / `B` | Add cell above / below (command mode) |
+| `D D` | Delete cell (command mode) |
+| `M` / `Y` | Switch to markdown / code (command mode) |
+
+## Rich Output
+
+```ts
+// Chart
+;({ __type: "chart", data: [10, 20, 30], config: { chartType: "bar", title: "My Chart" } })
+
+// Table (any array of objects)
+[{ name: "Alice", age: 30 }, { name: "Bob", age: 25 }]
+
+// HTML
+;({ __type: "html", html: "<h1>Hello</h1>" })
+```
 
 ## Development
 
 ```bash
-git clone https://github.com/youruser/yeastbook
+git clone https://github.com/nxank4/yeastbook
 cd yeastbook
 bun install
-bun run dev          # Build UI + start dev server
-bun test             # Run tests
-bun run build:all    # Full build (UI → embed → binary)
+bun run dev          # Build UI + start dev server with hot reload
+bun test             # Run tests (201 tests)
+bun run build:all    # Full build (UI + embed + binary)
 ```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). PRs welcome!
 
 ## License
 
-MIT
+[MIT](LICENSE)

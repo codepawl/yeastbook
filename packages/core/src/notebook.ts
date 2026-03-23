@@ -168,14 +168,14 @@ export class Notebook {
     if (idx === -1) return;
     const target = direction === "up" ? idx - 1 : idx + 1;
     if (target < 0 || target >= this.cells.length) return;
-    [this.cells[idx], this.cells[target]] = [this.cells[target], this.cells[idx]];
+    [this.cells[idx], this.cells[target]] = [this.cells[target]!, this.cells[idx]!];
   }
 
   reorderCell(id: string, toIndex: number): void {
     const fromIndex = this.cells.findIndex((c) => c.id === id);
     if (fromIndex === -1 || toIndex < 0 || toIndex >= this.cells.length) return;
     const [cell] = this.cells.splice(fromIndex, 1);
-    this.cells.splice(toIndex, 0, cell);
+    this.cells.splice(toIndex, 0, cell!);
   }
 
   getCell(id: string): Cell | undefined {

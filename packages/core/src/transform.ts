@@ -72,11 +72,11 @@ function transformSingleImport(stmt: string): string {
 
   // Named only: import { a, b } from "..."
   const named = clause.match(/^\{([^}]+)\}$/);
-  if (named) return `const {${named[1].replace(/\n/g, " ")}} = await import("${mod}")`;
+  if (named) return `const {${named[1]!.replace(/\n/g, " ")}} = await import("${mod}")`;
 
   // Default + named: import def, { a, b } from "..."
   const defNamed = clause.match(/^(\w+)\s*,\s*\{([^}]+)\}$/);
-  if (defNamed) return `const { default: ${defNamed[1]}, ${defNamed[2].replace(/\n/g, " ").trim()} } = await import("${mod}")`;
+  if (defNamed) return `const { default: ${defNamed[1]}, ${defNamed[2]!.replace(/\n/g, " ").trim()} } = await import("${mod}")`;
 
   // Default + namespace: import def, * as ns from "..."
   const defNs = clause.match(/^(\w+)\s*,\s*\*\s+as\s+(\w+)$/);

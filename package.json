@@ -2,6 +2,7 @@
   "name": "yeastbook-monorepo",
   "version": "0.0.1",
   "private": true,
+  "license": "MIT",
   "workspaces": ["packages/*"],
   "scripts": {
     "dev": "bun run dev:ui & bun run dev:server",

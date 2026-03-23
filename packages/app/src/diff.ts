@@ -188,7 +188,7 @@ export async function diffNotebook(
 export async function diffText(filePath: string): Promise<void> {
   const { notebook } = await loadNotebook(filePath);
   for (let i = 0; i < notebook.cells.length; i++) {
-    const cell = notebook.cells[i];
+    const cell = notebook.cells[i]!;
     console.log(`\n## Cell ${i + 1} [${cell.type}]`);
     console.log(cell.source);
     if (cell.outputs?.length) {

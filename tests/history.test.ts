@@ -11,7 +11,7 @@ describe("History: applyForward", () => {
     const cells = [makeCell("a", "code", "old")];
     const entry: HistoryEntry = { type: "source_change", cellId: "a", before: "old", after: "new" };
     const result = applyForward(cells, entry);
-    expect(result[0].source).toEqual(["new"]);
+    expect(result[0]!.source).toEqual(["new"]);
   });
 
   test("add_cell inserts cell at index", () => {
@@ -20,12 +20,12 @@ describe("History: applyForward", () => {
     const entry: HistoryEntry = { type: "add_cell", cell: newCell, index: 1 };
     const result = applyForward(cells, entry);
     expect(result.length).toBe(3);
-    expect(result[1].id).toBe("b");
+    expect(result[1]!.id).toBe("b");
   });
 
   test("delete_cell removes cell", () => {
     const cells = [makeCell("a"), makeCell("b"), makeCell("c")];
-    const entry: HistoryEntry = { type: "delete_cell", cell: cells[1], index: 1 };
+    const entry: HistoryEntry = { type: "delete_cell", cell: cells[1]!, index: 1 };
     const result = applyForward(cells, entry);
     expect(result.length).toBe(2);
     expect(result.map((c) => c.id)).toEqual(["a", "c"]);
@@ -42,7 +42,7 @@ describe("History: applyForward", () => {
     const cells = [makeCell("a", "code")];
     const entry: HistoryEntry = { type: "change_type", cellId: "a", before: "code", after: "markdown" };
     const result = applyForward(cells, entry);
-    expect(result[0].cell_type).toBe("markdown");
+    expect(result[0]!.cell_type).toBe("markdown");
   });
 
   test("batch applies multiple entries", () => {
@@ -55,8 +55,8 @@ describe("History: applyForward", () => {
       ],
     };
     const result = applyForward(cells, entry);
-    expect(result[0].source).toEqual(["y"]);
-    expect(result[0].cell_type).toBe("markdown");
+    expect(result[0]!.source).toEqual(["y"]);
+    expect(result[0]!.cell_type).toBe("markdown");
   });
 });
 
@@ -65,7 +65,7 @@ describe("History: applyReverse", () => {
     const cells = [makeCell("a", "code", "new")];
     const entry: HistoryEntry = { type: "source_change", cellId: "a", before: "old", after: "new" };
     const result = applyReverse(cells, entry);
-    expect(result[0].source).toEqual(["old"]);
+    expect(result[0]!.source).toEqual(["old"]);
   });
 
   test("add_cell undo removes the cell", () => {
@@ -83,8 +83,8 @@ describe("History: applyReverse", () => {
     const entry: HistoryEntry = { type: "delete_cell", cell: deleted, index: 1 };
     const result = applyReverse(cells, entry);
     expect(result.length).toBe(3);
-    expect(result[1].id).toBe("b");
-    expect(result[1].source).toEqual(["hello"]);
+    expect(result[1]!.id).toBe("b");
+    expect(result[1]!.source).toEqual(["hello"]);
   });
 
   test("move_cell undo reverses the move", () => {
@@ -97,15 +97,15 @@ describe("History: applyReverse", () => {
   test("change_type undo reverts type", () => {
     const cells = [makeCell("a", "markdown")];
     // Force the type for test
-    cells[0].cell_type = "markdown";
+    cells[0]!.cell_type = "markdown";
     const entry: HistoryEntry = { type: "change_type", cellId: "a", before: "code", after: "markdown" };
     const result = applyReverse(cells, entry);
-    expect(result[0].cell_type).toBe("code");
+    expect(result[0]!.cell_type).toBe("code");
   });
 
   test("batch undo reverses in correct order", () => {
     const cells = [makeCell("a", "markdown", "y")];
-    cells[0].cell_type = "markdown";
+    cells[0]!.cell_type = "markdown";
     const entry: HistoryEntry = {
       type: "batch",
       entries: [
@@ -114,8 +114,8 @@ describe("History: applyReverse", () => {
       ],
     };
     const result = applyReverse(cells, entry);
-    expect(result[0].source).toEqual(["x"]);
-    expect(result[0].cell_type).toBe("code");
+    expect(result[0]!.source).toEqual(["x"]);
+    expect(result[0]!.cell_type).toBe("code");
   });
 });
 
@@ -125,38 +125,38 @@ describe("History: undo/redo sequences", () => {
     const entry: HistoryEntry = { type: "source_change", cellId: "a", before: "old", after: "new" };
     // Apply forward
     const afterForward = applyForward(cells, entry);
-    expect(afterForward[0].source).toEqual(["new"]);
+    expect(afterForward[0]!.source).toEqual(["new"]);
     // Undo
     const afterUndo = applyReverse(afterForward, entry);
-    expect(afterUndo[0].source).toEqual(["old"]);
+    expect(afterUndo[0]!.source).toEqual(["old"]);
     // Redo
     const afterRedo = applyForward(afterUndo, entry);
-    expect(afterRedo[0].source).toEqual(["new"]);
+    expect(afterRedo[0]!.source).toEqual(["new"]);
   });
 
   test("multiple undo/redo sequence works", () => {
     let cells = [makeCell("a"), makeCell("b"), makeCell("c")];
     const entries: HistoryEntry[] = [
-      { type: "delete_cell", cell: cells[1], index: 1 },
+      { type: "delete_cell", cell: cells[1]!, index: 1 },
       { type: "move_cell", cellId: "a", fromIndex: 0, toIndex: 1 },
     ];
 
     // Apply both forward
-    cells = applyForward(cells, entries[0]); // delete b → [a, c]
-    cells = applyForward(cells, entries[1]); // move a 0→1 → [c, a]
+    cells = applyForward(cells, entries[0]!); // delete b → [a, c]
+    cells = applyForward(cells, entries[1]!); // move a 0→1 → [c, a]
     expect(cells.map((c) => c.id)).toEqual(["c", "a"]);
 
     // Undo second
-    cells = applyReverse(cells, entries[1]); // undo move → [a, c]
+    cells = applyReverse(cells, entries[1]!); // undo move → [a, c]
     expect(cells.map((c) => c.id)).toEqual(["a", "c"]);
 
     // Undo first
-    cells = applyReverse(cells, entries[0]); // undo delete → [a, b, c]
+    cells = applyReverse(cells, entries[0]!); // undo delete → [a, b, c]
     expect(cells.map((c) => c.id)).toEqual(["a", "b", "c"]);
 
     // Redo both
-    cells = applyForward(cells, entries[0]);
-    cells = applyForward(cells, entries[1]);
+    cells = applyForward(cells, entries[0]!);
+    cells = applyForward(cells, entries[1]!);
     expect(cells.map((c) => c.id)).toEqual(["c", "a"]);
   });
 });

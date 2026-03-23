@@ -36,7 +36,7 @@ describe("widgets", () => {
     const w = createSlider({ min: 0, max: 100 });
     let received: number | undefined;
     w.onChange((v) => { received = v; });
-    w._callbacks[0](75);
+    w._callbacks[0]!(75);
     expect(received).toBe(75);
   });
 });

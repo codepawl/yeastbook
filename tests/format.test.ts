@@ -95,18 +95,18 @@ describe("ybkToIpynb", () => {
     expect(ipynb.cells.length).toBe(2);
 
     // Code cell
-    expect(ipynb.cells[0].cell_type).toBe("code");
-    expect(ipynb.cells[0].id).toBe("cell-1");
-    expect(ipynb.cells[0].source).toEqual(["const x = 1 + 1"]);
-    expect(ipynb.cells[0].execution_count).toBe(1);
-    expect(ipynb.cells[0].outputs.length).toBe(1);
-    expect(ipynb.cells[0].outputs[0].output_type).toBe("execute_result");
+    expect(ipynb.cells[0]!.cell_type).toBe("code");
+    expect(ipynb.cells[0]!.id).toBe("cell-1");
+    expect(ipynb.cells[0]!.source).toEqual(["const x = 1 + 1"]);
+    expect(ipynb.cells[0]!.execution_count).toBe(1);
+    expect(ipynb.cells[0]!.outputs.length).toBe(1);
+    expect(ipynb.cells[0]!.outputs[0]!.output_type).toBe("execute_result");
 
     // Markdown cell
-    expect(ipynb.cells[1].cell_type).toBe("markdown");
-    expect(ipynb.cells[1].source).toEqual(["# Hello"]);
-    expect(ipynb.cells[1].execution_count).toBeNull();
-    expect(ipynb.cells[1].outputs).toEqual([]);
+    expect(ipynb.cells[1]!.cell_type).toBe("markdown");
+    expect(ipynb.cells[1]!.source).toEqual(["# Hello"]);
+    expect(ipynb.cells[1]!.execution_count).toBeNull();
+    expect(ipynb.cells[1]!.outputs).toEqual([]);
   });
 });
 
@@ -118,15 +118,15 @@ describe("ipynbToYbk", () => {
     expect(ybk.version).toBe("0.1.0");
     expect(ybk.cells.length).toBe(2);
 
-    expect(ybk.cells[0].type).toBe("code");
-    expect(ybk.cells[0].id).toBe("cell-1");
-    expect(ybk.cells[0].source).toBe("const x = 1 + 1");
-    expect(ybk.cells[0].executionCount).toBe(1);
-    expect(ybk.cells[0].outputs!.length).toBe(1);
+    expect(ybk.cells[0]!.type).toBe("code");
+    expect(ybk.cells[0]!.id).toBe("cell-1");
+    expect(ybk.cells[0]!.source).toBe("const x = 1 + 1");
+    expect(ybk.cells[0]!.executionCount).toBe(1);
+    expect(ybk.cells[0]!.outputs!.length).toBe(1);
 
-    expect(ybk.cells[1].type).toBe("markdown");
-    expect(ybk.cells[1].source).toBe("# Hello");
-    expect(ybk.cells[1].outputs).toBeUndefined();
+    expect(ybk.cells[1]!.type).toBe("markdown");
+    expect(ybk.cells[1]!.source).toBe("# Hello");
+    expect(ybk.cells[1]!.outputs).toBeUndefined();
   });
 });
 
@@ -139,12 +139,12 @@ describe("round-trip", () => {
     expect(roundTripped.cells.length).toBe(original.cells.length);
 
     for (let i = 0; i < original.cells.length; i++) {
-      expect(roundTripped.cells[i].id).toBe(original.cells[i].id);
-      expect(roundTripped.cells[i].type).toBe(original.cells[i].type);
-      expect(roundTripped.cells[i].source).toBe(original.cells[i].source);
-      if (original.cells[i].type === "code") {
-        expect(roundTripped.cells[i].executionCount).toBe(original.cells[i].executionCount);
-        expect(roundTripped.cells[i].outputs!.length).toBe(original.cells[i].outputs!.length);
+      expect(roundTripped.cells[i]!.id).toBe(original.cells[i]!.id);
+      expect(roundTripped.cells[i]!.type).toBe(original.cells[i]!.type);
+      expect(roundTripped.cells[i]!.source).toBe(original.cells[i]!.source);
+      if (original.cells[i]!.type === "code") {
+        expect(roundTripped.cells[i]!.executionCount).toBe(original.cells[i]!.executionCount);
+        expect(roundTripped.cells[i]!.outputs!.length).toBe(original.cells[i]!.outputs!.length);
       }
     }
   });
@@ -173,8 +173,8 @@ describe("loadNotebook / saveNotebook", () => {
     const { notebook, format } = await loadNotebook(tmpYbk);
     expect(format).toBe("ybk");
     expect(notebook.cells.length).toBe(2);
-    expect(notebook.cells[0].source).toBe("const x = 1 + 1");
-    expect(notebook.cells[1].source).toBe("# Hello");
+    expect(notebook.cells[0]!.source).toBe("const x = 1 + 1");
+    expect(notebook.cells[1]!.source).toBe("# Hello");
   });
 
   test("save as .ipynb writes ipynb format", async () => {
@@ -195,7 +195,7 @@ describe("loadNotebook / saveNotebook", () => {
     const { notebook, format } = await loadNotebook(tmpIpynb);
     expect(format).toBe("ipynb");
     expect(notebook.cells.length).toBe(2);
-    expect(notebook.cells[0].type).toBe("code");
-    expect(notebook.cells[0].source).toBe("const x = 1 + 1");
+    expect(notebook.cells[0]!.type).toBe("code");
+    expect(notebook.cells[0]!.source).toBe("const x = 1 + 1");
   });
 });

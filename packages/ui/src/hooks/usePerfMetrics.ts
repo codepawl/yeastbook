@@ -28,8 +28,8 @@ export function usePerfMetrics(
   const [metrics, setMetrics] = useState<PerfMetrics>(EMPTY_METRICS);
   const execStartsRef = useRef<Map<string, number>>(new Map());
   const rafRef = useRef<number>(0);
-  const pingIntervalRef = useRef<ReturnType<typeof setInterval>>();
-  const heapIntervalRef = useRef<ReturnType<typeof setInterval>>();
+  const pingIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const heapIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const renderTimeRef = useRef<number | null>(null);
 
   useEffect(() => {
