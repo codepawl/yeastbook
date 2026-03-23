@@ -21,7 +21,15 @@ function transpileTS(code: string): string {
   const start = result.indexOf("{") + 1;
   const end = result.lastIndexOf("}");
   if (start <= 0 || end <= start) return code;
-  return result.slice(start, end).trim();
+  let body = result.slice(start, end).trim();
+  // Bun's transpiler merges consecutive const/let/var declarations into one statement.
+  // e.g. `const {a} = expr, b = y;` — split these back so transformCellCode can hoist each.
+  // Only split when comma is followed by an identifier (new declaration), not inside expressions.
+  body = body.replace(
+    /^(\s*)(const|let|var)\s+(\{[^}]+\}|\[[^\]]+\])\s*=\s*(.+?),\s+([a-zA-Z_$]\w*\s*=)/gm,
+    (_m, indent, kw, pattern, expr, rest) => `${indent}${kw} ${pattern} = ${expr};\n${indent}${kw} ${rest}`
+  );
+  return body;
 }
 
 // Interrupt mechanism — allows cancelling execution between async yields
