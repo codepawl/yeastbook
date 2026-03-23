@@ -1,0 +1,82 @@
+{
+  "name": "vscode-yeastbook",
+  "displayName": "Yeastbook",
+  "description": "TypeScript notebooks powered by Bun",
+  "version": "0.0.1",
+  "publisher": "yeastbook",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nxank4/yeastbook.git",
+    "directory": "packages/vscode"
+  },
+  "license": "MIT",
+  "engines": { "vscode": "^1.85.0" },
+  "activationEvents": ["onNotebook:yeastbook"],
+  "icon": "icon.png",
+  "categories": ["Notebooks"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "notebooks": [{
+      "type": "yeastbook",
+      "displayName": "Yeastbook Notebook",
+      "selector": [
+        { "filenamePattern": "*.ybk" }
+      ]
+    }],
+    "languages": [{
+      "id": "yeastbook",
+      "aliases": ["Yeastbook"],
+      "extensions": [".ybk"]
+    }],
+    "commands": [
+      { "command": "yeastbook.runAll", "title": "Yeastbook: Run All Cells", "icon": "$(run-all)" },
+      { "command": "yeastbook.restartKernel", "title": "Yeastbook: Restart Kernel", "icon": "$(debug-restart)" },
+      { "command": "yeastbook.openInBrowser", "title": "Yeastbook: Open in Browser", "icon": "$(globe)" },
+      { "command": "yeastbook.exportScript", "title": "Yeastbook: Export as Script" },
+      { "command": "yeastbook.stripOutputs", "title": "Yeastbook: Strip Outputs" }
+    ],
+    "menus": {
+      "notebook/toolbar": [
+        { "command": "yeastbook.runAll", "group": "navigation/execute@1", "when": "notebookType == yeastbook" },
+        { "command": "yeastbook.restartKernel", "group": "navigation/execute@2", "when": "notebookType == yeastbook" },
+        { "command": "yeastbook.openInBrowser", "group": "navigation/execute@3", "when": "notebookType == yeastbook" }
+      ]
+    },
+    "configuration": {
+      "title": "Yeastbook",
+      "properties": {
+        "yeastbook.serverPort": {
+          "type": "number",
+          "default": 0,
+          "description": "Fixed port for yeastbook server (0 = auto)"
+        },
+        "yeastbook.bunPath": {
+          "type": "string",
+          "default": "bun",
+          "description": "Path to bun executable"
+        },
+        "yeastbook.autoStartServer": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically start server when opening a notebook"
+        },
+        "yeastbook.kernelStartupTimeout": {
+          "type": "number",
+          "default": 15000,
+          "description": "Timeout in ms for kernel startup (default 15000)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "bun build src/extension.ts --outdir dist --target node --format cjs --external vscode",
+    "package": "bunx @vscode/vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/ws": "^8.5.0"
+  }
+}

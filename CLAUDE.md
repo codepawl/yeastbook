@@ -1,3 +1,51 @@
+## Branching Strategy
+
+- **`main`** — production only, stable releases
+- **`staging`** — development, commit directly here
+- **`hotfix/<name>`** — urgent fixes branched off main
+
+### Rules
+- Commit directly to staging (no feature branches)
+- Never commit directly to main
+- When staging tested and stable: merge staging into main + tag release
+- Hotfixes: branch off main, merge back to both main AND staging
+
+### Commit Messages (Conventional Commits)
+- `feat:` new feature
+- `fix:` bug fix
+- `chore:` tooling, config
+- `docs:` documentation
+- `refactor:` code restructure
+- `test:` adding tests
+
+### Merge Strategy
+- Rebase before merging to keep history linear
+- No fast-forward merges to staging/main: use `--no-ff`
+- Squash commits on feature branch before merging if too many small commits
+
+### PR Checklist (before merging to staging)
+- `bun test` passes
+- `bun run build:ui` succeeds
+- Manual smoke test: `bun src/cli.ts new` works
+- No TypeScript errors
+
+## Versioning
+
+- `0.0.x` — internal dev, not usable by others
+- `0.x.0` — public beta, usable but not stable
+- `1.0.0` — stable MVP, production-ready
+
+### MVP Checklist (before 0.1.0)
+- [ ] `bunx yeastbook new` works on a stranger's machine
+- [ ] No crash during normal usage
+- [ ] README sufficient for new users
+- [ ] At least 1-2 external testers confirm usable
+- [ ] Binary builds on Linux + Mac
+
+### Release History
+- **0.0.1** (current) — P0 core execution + P1 Monaco/rich output + P2 ecosystem (internal dev)
+
+---
 
 Default to using Bun instead of Node.js.
 
@@ -23,84 +71,13 @@ Default to using Bun instead of Node.js.
 
 Use `bun test` to run tests.
 
-```ts#index.test.ts
-import { test, expect } from "bun:test";
-
-test("hello world", () => {
-  expect(1).toBe(1);
-});
-```
-
 ## Frontend
 
 Use HTML imports with `Bun.serve()`. Don't use `vite`. HTML imports fully support React, CSS, Tailwind.
 
-Server:
-
-```ts#index.ts
-import index from "./index.html"
-
-Bun.serve({
-  routes: {
-    "/": index,
-    "/api/users/:id": {
-      GET: (req) => {
-        return new Response(JSON.stringify({ id: req.params.id }));
-      },
-    },
-  },
-  // optional websocket support
-  websocket: {
-    open: (ws) => {
-      ws.send("Hello, world!");
-    },
-    message: (ws, message) => {
-      ws.send(message);
-    },
-    close: (ws) => {
-      // handle close
-    }
-  },
-  development: {
-    hmr: true,
-    console: true,
-  }
-})
-```
-
-HTML files can import .tsx, .jsx or .js files directly and Bun's bundler will transpile & bundle automatically. `<link>` tags can point to stylesheets and Bun's CSS bundler will bundle.
-
-```html#index.html
-<html>
-  <body>
-    <h1>Hello, world!</h1>
-    <script type="module" src="./frontend.tsx"></script>
-  </body>
-</html>
-```
-
-With the following `frontend.tsx`:
-
-```tsx#frontend.tsx
-import React from "react";
-import { createRoot } from "react-dom/client";
-
-// import .css files directly and it works
-import './index.css';
-
-const root = createRoot(document.body);
-
-export default function Frontend() {
-  return <h1>Hello, world!</h1>;
-}
-
-root.render(<Frontend />);
-```
-
-Then, run index.ts
-
-```sh
-bun --hot ./index.ts
-```
-
-For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
+- Import HTML files directly in server: `import index from "./index.html"`
+- HTML files can import .tsx, .jsx, .js directly — Bun transpiles automatically
+- `<link>` tags pointing to stylesheets — Bun CSS bundler handles automatically
+- Use `Bun.serve()` with `routes` object for API endpoints
+- Use `development: { hmr: true }` for hot reload in dev
+- Run with `bun --hot ./index.ts`
