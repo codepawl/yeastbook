@@ -57,7 +57,9 @@ export function CodeCell({
   const sourceRef = useRef(cell.source.join("\n"));
   const historyBeforeRef = useRef(cell.source.join("\n"));
   const historyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Refs for callbacks to avoid stale closures in Monaco commands
+  // Refs for callbacks and cell ID to avoid stale closures in Monaco commands
+  const cellIdRef = useRef(cell.id);
+  cellIdRef.current = cell.id;
   const onRunRef = useRef(onRun);
   onRunRef.current = onRun;
   const onRunAndAdvanceRef = useRef(onRunAndAdvance);
@@ -292,14 +294,14 @@ declare function createSelect(config: { options: string[]; value?: string; label
         if (e.shiftKey && e.key === "Enter" && !e.ctrlKey && !e.metaKey) {
           e.stopImmediatePropagation();
           e.preventDefault();
-          onRunAndAdvanceRef.current(cell.id, sourceRef.current);
+          onRunAndAdvanceRef.current?.(cellIdRef.current, sourceRef.current);
           return;
         }
         // Ctrl/Cmd+Enter → run and stay
         if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
           e.stopImmediatePropagation();
           e.preventDefault();
-          onRunRef.current(cell.id, sourceRef.current);
+          onRunRef.current?.(cellIdRef.current, sourceRef.current);
           return;
         }
         // Ctrl/Cmd+S → save
