@@ -5,8 +5,7 @@ import { SettingsPanel } from "./components/SettingsPanel.tsx";
 import { MenuBar, ShortcutsModal, AboutModal } from "./components/MenuBar.tsx";
 import { StatusBar } from "./components/StatusBar.tsx";
 import { CommandPalette } from "./components/CommandPalette.tsx";
-import { RightSidebar } from "./components/RightSidebar.tsx";
-import { FileExplorer } from "./components/FileExplorer.tsx";
+import { LeftSidebar } from "./components/LeftSidebar.tsx";
 import { PerfHUD } from "./components/PerfHUD.tsx";
 import { FindReplace } from "./components/FindReplace.tsx";
 import { PythonBootstrapModal, type BootstrapPhase } from "./components/PythonBootstrapModal.tsx";
@@ -56,7 +55,9 @@ export function App() {
   const [isPresenting, setIsPresenting] = useState(
     new URLSearchParams(window.location.search).get("mode") === "present"
   );
-  const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
+  const toggleSidebar = useCallback(() => {
+    window.dispatchEvent(new CustomEvent("yeastbook-toggle-sidebar"));
+  }, []);
   const [fileTreeVersion, setFileTreeVersion] = useState(0);
   const [pythonPath, setPythonPath] = useState<string | null>(null);
   const [hasVenv, setHasVenv] = useState<boolean>(false);
@@ -1125,7 +1126,7 @@ export function App() {
     { id: "run-above", label: "Run All Above", action: () => handleRunAllAbove() },
     { id: "run-below", label: "Run All Below", action: () => handleRunAllBelow() },
     { id: "interrupt", label: "Interrupt Execution", shortcut: "I I", action: handleInterrupt },
-    { id: "file-explorer", label: "Toggle File Explorer", shortcut: "Ctrl+B", action: () => setLeftSidebarOpen((p) => !p) },
+    { id: "file-explorer", label: "Toggle File Explorer", shortcut: "Ctrl+B", action: toggleSidebar },
   ], [handleRestart, handleRunAll, handleSave, handleAddCell, toggleTheme, handleExportIpynb, handleExportYbk, togglePresentation, handleRunAllAbove, handleRunAllBelow, handleInterrupt]);
 
   const FONT_SIZES = [12, 13, 14, 16];
@@ -1186,7 +1187,7 @@ export function App() {
     },
     onUndo: history.undo,
     onRedo: history.redo,
-    onToggleFileExplorer: () => setLeftSidebarOpen((p) => !p),
+    onToggleFileExplorer: toggleSidebar,
     onFocusCell: (cellId: string) => setFocusedCellId(cellId),
     onToggleFindReplace: () => setFindReplaceOpen((p) => !p),
   });
@@ -1261,7 +1262,7 @@ export function App() {
             onRedo={history.redo}
             canUndo={history.canUndo()}
             canRedo={history.canRedo()}
-            onToggleFileExplorer={() => setLeftSidebarOpen((p) => !p)}
+            onToggleFileExplorer={toggleSidebar}
             settings={settings}
             onUpdateSettings={handleUpdateSettings}
           />
@@ -1280,23 +1281,19 @@ export function App() {
       <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} version={version} bunVersion={bunVersion} />
       <Profiler id="notebook" onRender={perfMetrics.onProfilerRender}>
       <div className="notebook-layout">
-      {!isPresenting && !leftSidebarOpen && (
-        <button
-          className="sidebar-left-tab"
-          title="Open File Explorer (Ctrl+B)"
-          onClick={() => setLeftSidebarOpen(true)}
-        >
-          <i className="bi bi-folder" />
-        </button>
-      )}
       {!isPresenting && (
-        <div className={`sidebar-left ${leftSidebarOpen ? "" : "collapsed"}`}>
-          <FileExplorer
-            onOpenNotebook={handleOpenFile}
-            onClose={() => setLeftSidebarOpen(false)}
-            refreshTrigger={fileTreeVersion}
-          />
-        </div>
+        <LeftSidebar
+          cells={cells}
+          variables={variables}
+          dependencies={dependencies}
+          inspectionResults={inspectionResults}
+          onInspectVariable={(name) => send({ type: "variable_inspect", name })}
+          onScrollToCell={(id) => {
+            document.getElementById(`cell-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+          }}
+          onOpenNotebook={handleOpenFile}
+          fileTreeRefresh={fileTreeVersion}
+        />
       )}
       <FindReplace
         open={findReplaceOpen}
@@ -1348,18 +1345,6 @@ export function App() {
         onBlurSave={flushCellSave}
         execTiming={execTiming}
       />
-      {settings.layout?.sidebar && !isPresenting && (
-        <RightSidebar
-          cells={cells}
-          variables={variables}
-          dependencies={dependencies}
-          inspectionResults={inspectionResults}
-          onInspectVariable={(name) => send({ type: "variable_inspect", name })}
-          onScrollToCell={(id) => {
-            document.getElementById(`cell-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
-          }}
-        />
-      )}
       </div>
       </Profiler>
       {toast && settings.appearance.notifications === "show" && <div className="toast">{toast}</div>}

@@ -352,45 +352,45 @@ input, textarea, select {
 .notebook-layout .notebook { flex: 1; min-width: 0; overflow-y: auto; }
 
 
-.notebook-sidebar {
-  width: 280px; flex-shrink: 0;
-  display: flex;
-  border-left: 1px solid var(--border-subtle);
+/* --- Left Sidebar (unified tabbed panel) --- */
+.left-sidebar {
+  display: flex; flex-shrink: 0;
+  border-right: 1px solid var(--border-subtle);
   background: var(--bg-surface);
   overflow: hidden;
-  transition: width 0.15s ease;
 }
-.notebook-sidebar.collapsed { width: 44px; }
-
-/* Tab strip */
-.sidebar-tab-strip {
+.left-sidebar-icons {
   width: 44px; flex-shrink: 0;
   display: flex; flex-direction: column;
   align-items: center;
-  padding-top: 8px; gap: 4px;
-  border-right: 1px solid var(--border-subtle);
+  padding-top: 8px; gap: 2px;
+  background: var(--bg-surface);
 }
-.sidebar-tab-btn {
+.left-sidebar-icon {
   width: 36px; height: 36px;
   display: flex; align-items: center; justify-content: center;
   border: none; background: none; border-radius: 6px;
   color: var(--text-muted); cursor: pointer;
   font-size: 16px; transition: color 0.1s, background 0.1s;
 }
-.sidebar-tab-btn:hover { color: var(--text-secondary); background: var(--bg-app); }
-.sidebar-tab-btn.active { color: var(--accent, #D97706); background: rgba(217, 119, 6, 0.1); }
-
-/* Content panel */
-.sidebar-content {
-  flex: 1; min-width: 0;
+.left-sidebar-icon:hover { color: var(--text-secondary); background: var(--bg-app); }
+.left-sidebar-icon.active {
+  color: var(--accent, #D97706);
+  border-left: 2px solid var(--accent, #D97706);
+  border-radius: 0 6px 6px 0;
+}
+.left-sidebar-panel {
+  width: 260px;
+  display: flex; flex-direction: column;
+  border-left: 1px solid var(--border-subtle);
+  overflow: hidden;
+  resize: horizontal;
+  min-width: 180px; max-width: 500px;
+}
+.left-sidebar-scroll {
+  flex: 1; min-height: 0;
   overflow-y: auto; overflow-x: hidden;
   padding: 4px 0;
-}
-.sidebar-section-title {
-  font-size: 11px; font-weight: 600;
-  color: var(--text-muted);
-  letter-spacing: 0.05em;
-  padding: 8px 12px 4px;
 }
 
 /* Table of Contents */
@@ -422,44 +422,7 @@ input, textarea, select {
   background: var(--bg-code); border-radius: 3px;
 }
 
-/* --- Left Sidebar (File Explorer) --- */
-.sidebar-left-tab {
-  width: 36px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 12px;
-  background: var(--bg-surface);
-  border: none;
-  border-right: 1px solid var(--border-subtle);
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 18px;
-}
-.sidebar-left-tab:hover {
-  color: var(--accent);
-  background: var(--accent-light);
-}
-.sidebar-left {
-  width: 260px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  border-right: 1px solid var(--border-subtle);
-  background: var(--bg-surface);
-  overflow: hidden;
-  resize: horizontal;
-  min-width: 180px;
-  max-width: 500px;
-}
-.sidebar-left.collapsed {
-  width: 0 !important;
-  min-width: 0;
-  border-right: none;
-  resize: none;
-  overflow: hidden;
-}
+/* --- Sidebar panel header/actions (shared by FileExplorer + other panels) --- */
 .sidebar-left-header {
   display: flex;
   align-items: center;
