@@ -344,39 +344,43 @@ if (!command || command === "new") {
   }
   await checkWritePermission();
 
-  let filePath: string;
+  let filePath: string | null = null;
   if (dev) {
+    // In dev mode: reuse existing notebook, or start with no file (avoid creating junk files on --watch restart)
     const existing = await promptDevNotebook(targetDir);
     if (existing) {
       filePath = existing;
       console.log(`Opening notebook: ${filePath}`);
-    } else {
-      const ext = ipynb ? ".ipynb" : ".ybk";
-      filePath = resolve(targetDir, `notebook-${Date.now()}${ext}`);
-      console.log(`Creating new notebook: ${filePath}`);
     }
   } else {
+    // Normal mode: always create a new notebook file
     const ext = ipynb ? ".ipynb" : ".ybk";
     filePath = resolve(targetDir, `notebook-${Date.now()}${ext}`);
     console.log(`Creating new notebook: ${filePath}`);
   }
 
-  if (template) {
+  if (!filePath && template) {
     const tmpl = templates[template];
     if (!tmpl) {
       console.error(`Unknown template: ${template}`);
       console.error(`Available: ${Object.keys(templates).join(", ")}`);
       process.exit(1);
     }
+    const ext = ipynb ? ".ipynb" : ".ybk";
+    filePath = resolve(targetDir, `notebook-${Date.now()}${ext}`);
     await Bun.write(filePath, JSON.stringify(tmpl, null, 2) + "\n");
     console.log(`Using template: ${template}`);
   }
 
-  await autoInstallDeps(filePath);
+  if (filePath) await autoInstallDeps(filePath);
   const actualPort = await findFreePort(port);
   const server = await startServer(filePath, actualPort, dev);
   console.log(`Yeastbook running at http://localhost:${server.port}`);
-  console.log(`Notebook: ${filePath}`);
+  if (filePath) {
+    console.log(`Notebook: ${filePath}`);
+  } else {
+    console.log(`Watching directory: ${targetDir}`);
+  }
   process.on("SIGINT", async () => {
     console.log("\nShutting down yeastbook...");
     server.stop();
