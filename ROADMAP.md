@@ -6,7 +6,7 @@ Core execution engine, Monaco editor, rich output (charts, tables, JSON trees), 
 
 ## Next: v0.1.0 (Public Beta)
 
-- [ ] `bunx yeastbook new` works on a stranger's machine
+- [ ] `bunx yeastbook new` works on a another user's machine
 - [ ] No crash during normal usage
 - [ ] README sufficient for new users
 - [ ] Binary builds on Linux + macOS

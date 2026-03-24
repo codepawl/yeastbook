@@ -234,6 +234,14 @@ export class YbkKernel {
           } else {
             this.output.appendLine("Max reconnection attempts reached. Giving up.");
             this.setStatus("error");
+            vscode.window.showErrorMessage(
+              "Kernel connection lost and could not reconnect. Restart the kernel to continue.",
+              "Restart Kernel",
+            ).then((choice) => {
+              if (choice === "Restart Kernel") {
+                vscode.commands.executeCommand("yeastbook.restartKernel");
+              }
+            });
           }
         }
       });
@@ -404,6 +412,14 @@ export class YbkKernel {
         vscode.NotebookCellOutputItem.error(new Error("WebSocket not connected")),
       ]));
       execution.end(false, Date.now());
+      vscode.window.showErrorMessage(
+        "Kernel WebSocket is not connected. Try restarting the kernel.",
+        "Restart Kernel",
+      ).then((choice) => {
+        if (choice === "Restart Kernel") {
+          vscode.commands.executeCommand("yeastbook.restartKernel");
+        }
+      });
       return;
     }
 

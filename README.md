@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/yeastbook-logo.png" alt="Yeastbook" width="100" />
+  <img src="assets/icon.png" alt="Yeastbook" width="100" />
 </p>
 
 <h1 align="center">yeastbook</h1>
