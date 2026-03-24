@@ -2,9 +2,11 @@ import { useRef, useEffect, useCallback, useState } from "react";
 import Editor, { type OnMount, type BeforeMount } from "@monaco-editor/react";
 import { CellOutput } from "./CellOutput.tsx";
 import { ContextMenu, type ContextMenuItem } from "./ContextMenu.tsx";
+import { useCopyFeedback } from "../hooks/useCopyFeedback.ts";
 import type { Cell, CellOutput as CellOutputType } from "@codepawl/yeastbook-core";
 
 let bunTypesLoaded = false;
+
 
 interface Props {
   cell: Cell;
@@ -17,6 +19,7 @@ interface Props {
   installing?: { packages: string[]; logs: string[]; done: boolean; error?: string };
   isCommandFocused?: boolean;
   isPresenting?: boolean;
+  performanceMode?: boolean;
   onModeChange?: (mode: "command" | "edit") => void;
   onRun: (cellId: string, code: string) => void;
   onRunAndAdvance: (cellId: string, code: string) => void;
@@ -50,15 +53,18 @@ interface Props {
 
 export function CodeCell({
   cell, busy, liveOutputs, theme, fontSize, tabSize, wordWrap,
-  installing, isCommandFocused, isPresenting, onModeChange, onRun, onRunAndAdvance, onSourceChange, onDelete, onClear, onMoveUp, onMoveDown,
+  installing, isCommandFocused, isPresenting, performanceMode, onModeChange, onRun, onRunAndAdvance, onSourceChange, onDelete, onClear, onMoveUp, onMoveDown,
   onRunAllAbove, onRunAllBelow, onInterrupt, onChangeType,
   onRunAll, onCut, onCopy, onPasteBelow, hasClipboard, onInsertAbove, onInsertBelow, onHistoryPush, dragHandleRef,
   onSave, onOpenPalette, onEditorMount, onSelectAcrossCells, onBlurSave, isFolded, onToggleFold, onChangeLanguage,
 }: Props) {
   const editorRef = useRef<any>(null);
   const monacoRef = useRef<any>(null);
+  const { copied: outputCopied, handleCopy: handleCopyOutput } = useCopyFeedback();
   const [editorHeight, setEditorHeight] = useState(60);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; zone: "cell" | "output" } | null>(null);
+  const [moreMenu, setMoreMenu] = useState<{ x: number; y: number } | null>(null);
+  const moreBtnRef = useRef<HTMLButtonElement>(null);
   const sourceRef = useRef(cell.source.join("\n"));
   const historyBeforeRef = useRef(cell.source.join("\n"));
 
@@ -561,67 +567,69 @@ export function CodeCell({
     navigator.clipboard.writeText(combined);
   }, [displayOutputs, getOutputText]);
 
-  const buildCtxItems = useCallback((): ContextMenuItem[] => {
-    if (ctxMenu?.zone === "output") {
-      return [
-        { id: "copy-output", label: "Copy Output Text", icon: "bi bi-clipboard", onClick: () => {
-          navigator.clipboard.writeText(getOutputText(displayOutputs));
-        }},
-        { id: "copy-both", label: "Copy Input + Output", icon: "bi bi-clipboard2-plus", onClick: copyInputAndOutput },
-        { id: "clear-output", label: "Clear Output", icon: "bi bi-eraser", onClick: () => onClear(cell.id) },
-        { id: "sep-hint", label: "", separator: true },
-        { id: "hint", label: "Shift+Right-Click for browser menu", hint: true },
-      ];
-    }
-    return [
-      { id: "run", label: "Run Cell", icon: "bi bi-play-fill", shortcut: "Shift+Enter", onClick: () => onRun(cell.id, sourceRef.current) },
-      { id: "run-all", label: "Run All Cells", icon: "bi bi-fast-forward-fill", onClick: onRunAll },
-      { id: "sep1", label: "", separator: true },
-      { id: "cut", label: "Cut Cell", icon: "bi bi-scissors", onClick: onCut },
-      { id: "copy", label: "Copy Cell", icon: "bi bi-clipboard", onClick: onCopy },
+  const buildCtxItems = useCallback((): ContextMenuItem[] => [
+    // Execution
+    { id: "run", label: "Run Cell", icon: "bi bi-play-fill", shortcut: "Shift+Enter", onClick: () => onRun(cell.id, sourceRef.current) },
+    { id: "clear", label: "Clear Output", icon: "bi bi-eraser", onClick: () => onClear(cell.id), disabled: displayOutputs.length === 0 },
+    { id: "sep1", label: "", separator: true },
+    // Cell management
+    { id: "cut", label: "Cut Cell", icon: "bi bi-scissors", onClick: onCut },
+    { id: "paste", label: "Paste Cell Below", icon: "bi bi-clipboard-check", onClick: onPasteBelow, disabled: !hasClipboard },
+    { id: "copy-menu", label: "Copy...", icon: "bi bi-clipboard", submenu: [
+      { id: "copy-cell", label: "Copy Cell", icon: "bi bi-clipboard", onClick: onCopy },
+      { id: "copy-output", label: "Copy Output", icon: "bi bi-clipboard2", onClick: () => navigator.clipboard.writeText(getOutputText(displayOutputs)), disabled: displayOutputs.length === 0 },
       { id: "copy-both", label: "Copy Input + Output", icon: "bi bi-clipboard2-plus", onClick: copyInputAndOutput },
-      { id: "paste", label: "Paste Cell Below", icon: "bi bi-clipboard-check", onClick: onPasteBelow, disabled: !hasClipboard },
-      { id: "sep2", label: "", separator: true },
-      { id: "move-up", label: "Move Up", icon: "bi bi-arrow-up", onClick: onMoveUp, disabled: !onMoveUp },
-      { id: "move-down", label: "Move Down", icon: "bi bi-arrow-down", onClick: onMoveDown, disabled: !onMoveDown },
-      { id: "sep3", label: "", separator: true },
-      { id: "add-code-above", label: "Add Code Cell Above", icon: "bi bi-plus-square", onClick: () => onInsertAbove?.("code") },
-      { id: "add-code-below", label: "Add Code Cell Below", icon: "bi bi-plus-square", onClick: () => onInsertBelow?.("code") },
-      { id: "add-md-below", label: "Add Markdown Below", icon: "bi bi-markdown", onClick: () => onInsertBelow?.("markdown") },
-      { id: "sep4", label: "", separator: true },
-      { id: "to-markdown", label: "Change to Markdown", icon: "bi bi-markdown", shortcut: "M", onClick: onChangeType },
-      { id: "lang-toggle", label: isPythonCell ? "Change to TypeScript" : "Change to Python", icon: isPythonCell ? "bi bi-filetype-tsx" : "bi bi-filetype-py", shortcut: "L", onClick: () => onChangeLanguage?.(cell.id, isPythonCell ? "typescript" : "python") },
-      { id: "sep5", label: "", separator: true },
-      { id: "clear", label: "Clear Output", icon: "bi bi-eraser", onClick: () => onClear(cell.id) },
-      { id: "delete", label: "Delete Cell", icon: "bi bi-trash3", danger: true, onClick: () => onDelete(cell.id) },
-      { id: "sep-hint", label: "", separator: true },
-      { id: "hint", label: "Shift+Right-Click for browser menu", hint: true },
-    ];
-  }, [ctxMenu, cell.id, displayOutputs, onRun, onRunAll, onCut, onCopy, onPasteBelow, hasClipboard, onMoveUp, onMoveDown, onInsertAbove, onInsertBelow, onClear, onDelete, onChangeType, onChangeLanguage, isPythonCell]);
+    ]},
+    { id: "sep2", label: "", separator: true },
+    // Insert
+    { id: "add-code-above", label: "Add Code Above", icon: "bi bi-plus-square", onClick: () => onInsertAbove?.("code") },
+    { id: "add-code-below", label: "Add Code Below", icon: "bi bi-plus-square", onClick: () => onInsertBelow?.("code") },
+    { id: "add-md-below", label: "Add Markdown Below", icon: "bi bi-markdown", onClick: () => onInsertBelow?.("markdown") },
+    { id: "sep3", label: "", separator: true },
+    // Formatting
+    { id: "to-markdown", label: "Change to Markdown", icon: "bi bi-markdown", shortcut: "M", onClick: onChangeType },
+    { id: "lang-toggle", label: isPythonCell ? "Change to TypeScript" : "Change to Python", icon: isPythonCell ? "bi bi-filetype-tsx" : "bi bi-filetype-py", shortcut: "L", onClick: () => onChangeLanguage?.(cell.id, isPythonCell ? "typescript" : "python") },
+    { id: "sep4", label: "", separator: true },
+    // Danger
+    { id: "delete", label: "Delete Cell", icon: "bi bi-trash3", danger: true, onClick: () => onDelete(cell.id) },
+    { id: "sep-hint", label: "", separator: true },
+    { id: "hint", label: "Shift+Right-Click for browser menu", hint: true },
+  ], [cell.id, displayOutputs, onRun, onCut, onCopy, onPasteBelow, hasClipboard, onInsertAbove, onInsertBelow, onClear, onDelete, onChangeType, onChangeLanguage, isPythonCell, getOutputText, copyInputAndOutput]);
 
   return (
     <div className={`cell code-cell ${isCommandFocused ? "command-focused" : ""}`} id={`cell-${cell.id}`} onContextMenu={handleContextMenu}>
       <div className="cell-header">
         <div ref={dragHandleRef} className="cell-drag-handle" title="Drag to reorder"><i className="bi bi-grip-vertical" /></div>
-        <button className="cell-fold-btn" onClick={(e) => { e.stopPropagation(); onToggleFold?.(cell.id); }} title={isFolded ? "Expand cell" : "Collapse cell"}>
-          <i className={`bi ${isFolded ? "bi-chevron-right" : "bi-chevron-down"}`} />
+        <button className={`run-btn ${busy ? "stop" : ""}`} onClick={(e) => { e.stopPropagation(); busy ? onInterrupt?.() : onRun(cell.id, sourceRef.current); }} title={busy ? "Stop execution (I I)" : "Run cell (Shift+Enter)"}>
+          <i className={busy ? "bi bi-stop-fill" : "bi bi-play-fill"} />
         </button>
-        <button className="cell-type cell-type-toggle" onClick={(e) => { e.stopPropagation(); onChangeType?.(); }} title="Switch to markdown (M)">code</button>
-        <button className={`cell-lang-badge ${isPythonCell ? "cell-lang-python" : "cell-lang-ts"}`} onClick={(e) => { e.stopPropagation(); onChangeLanguage?.(cell.id, isPythonCell ? "typescript" : "python"); }} title={isPythonCell ? "Switch to TypeScript (T)" : "Switch to Python (P)"}>
-          <i className={isPythonCell ? "bi bi-filetype-py" : "bi bi-filetype-tsx"} />{isPythonCell ? " Python" : " TypeScript"}
-        </button>
+        <span className="cell-type-label" onClick={(e) => { e.stopPropagation(); onChangeLanguage?.(cell.id, isPythonCell ? "typescript" : "python"); }} title="Click to change language">
+          code · {isPythonCell ? "python" : "typescript"}
+        </span>
         <div className="cell-actions">
-          {onMoveUp && <button onClick={(e) => { e.stopPropagation(); onMoveUp(); }} title="Move up"><i className="bi bi-arrow-up" /></button>}
-          {onMoveDown && <button onClick={(e) => { e.stopPropagation(); onMoveDown(); }} title="Move down"><i className="bi bi-arrow-down" /></button>}
-          <button className={`run-btn ${busy ? "stop" : ""}`} onClick={(e) => { e.stopPropagation(); busy ? onInterrupt?.() : onRun(cell.id, sourceRef.current); }} title={busy ? "Stop execution" : "Run cell"}>
-            <i className={busy ? "bi bi-stop-fill" : "bi bi-play-fill"} />
+          <button ref={moreBtnRef} className="cell-more-btn" onClick={(e) => {
+            e.stopPropagation();
+            const rect = (e.target as HTMLElement).getBoundingClientRect();
+            setMoreMenu(moreMenu ? null : { x: rect.left, y: rect.bottom + 2 });
+          }} title="More actions">
+            <i className="bi bi-three-dots" />
           </button>
-          <button className="run-btn" onClick={(e) => { e.stopPropagation(); onRunAllBelow?.(); }} title="Run all from here">
-            <i className="bi bi-skip-end-fill" />
-          </button>
-          <button onClick={(e) => { e.stopPropagation(); onDelete(cell.id); }} title="Delete cell"><i className="bi bi-trash3" /></button>
         </div>
       </div>
+      {moreMenu && (
+        <ContextMenu x={moreMenu.x} y={moreMenu.y} onClose={() => setMoreMenu(null)} items={[
+          { id: "fold", label: isFolded ? "Expand Cell" : "Collapse Cell", icon: isFolded ? "bi bi-chevron-expand" : "bi bi-chevron-contract", onClick: () => onToggleFold?.(cell.id) },
+          { id: "sep1", label: "", separator: true },
+          { id: "move-up", label: "Move Up", icon: "bi bi-arrow-up", onClick: onMoveUp, disabled: !onMoveUp },
+          { id: "move-down", label: "Move Down", icon: "bi bi-arrow-down", onClick: onMoveDown, disabled: !onMoveDown },
+          { id: "run-below", label: "Run All Below", icon: "bi bi-skip-end-fill", onClick: onRunAllBelow },
+          { id: "sep2", label: "", separator: true },
+          { id: "to-markdown", label: "Change to Markdown", icon: "bi bi-markdown", shortcut: "M", onClick: onChangeType },
+          { id: "lang-toggle", label: isPythonCell ? "Change to TypeScript" : "Change to Python", icon: isPythonCell ? "bi bi-filetype-tsx" : "bi bi-filetype-py", shortcut: "L", onClick: () => onChangeLanguage?.(cell.id, isPythonCell ? "typescript" : "python") },
+          { id: "sep3", label: "", separator: true },
+          { id: "delete", label: "Delete Cell", icon: "bi bi-trash3", danger: true, onClick: () => onDelete(cell.id) },
+        ]} />
+      )}
       {isFolded ? (
         <div className="cell-fold-summary" onClick={() => onToggleFold?.(cell.id)}>
           <span className="cell-fold-preview">{(cell.source[0] || "// empty cell").slice(0, 80)}{(cell.source[0]?.length ?? 0) > 80 ? "..." : ""}</span>
@@ -659,6 +667,14 @@ export function CodeCell({
             contextmenu: false,
             fixedOverflowWidgets: true,
             multiCursorModifier: "alt",
+            // Performance mode optimizations
+            ...(performanceMode ? {
+              cursorBlinking: "solid" as const,
+              smoothScrolling: false,
+              matchBrackets: "never" as const,
+              renderWhitespace: "none" as const,
+              occurrencesHighlight: "off" as const,
+            } : {}),
           }}
         />
       </div>
@@ -666,14 +682,14 @@ export function CodeCell({
       {!isFolded && (displayOutputs.length > 0 || installing) && (
         <div className="output-section">
           <div className="output-actions">
-            <button onClick={(e) => { e.stopPropagation(); onClear(cell.id); }} title="Clear output"><i className="bi bi-eraser" /></button>
+            <button onClick={(e) => { e.stopPropagation(); handleCopyOutput(getOutputText(displayOutputs)); }} title="Copy output" className={outputCopied ? "output-action-done" : ""}><i className={outputCopied ? "bi bi-check-lg" : "bi bi-clipboard"} /> {outputCopied ? "Copied!" : "Copy"}</button>
+            <button onClick={(e) => { e.stopPropagation(); onClear(cell.id); }} title="Clear output"><i className="bi bi-eraser" /> Clear</button>
           </div>
           {installing && (
             <div className="output-area">
               {!installing.done && (
                 <div className="output-stdout">
-                  <div className="loading-bar" />
-                  Installing {installing.packages.join(", ")}...
+                  <i className="bi bi-circle-fill cell-running-dot" /> Installing {installing.packages.join(", ")}...
                 </div>
               )}
               {installing.logs.length > 0 && (
@@ -687,7 +703,7 @@ export function CodeCell({
               )}
             </div>
           )}
-          <CellOutput outputs={displayOutputs} />
+          <CellOutput outputs={displayOutputs} performanceMode={performanceMode} />
         </div>
       )}
       {ctxMenu && <ContextMenu x={ctxMenu.x} y={ctxMenu.y} items={buildCtxItems()} onClose={() => setCtxMenu(null)} />}

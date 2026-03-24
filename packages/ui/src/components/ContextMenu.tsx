@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Portal } from "./Portal.tsx";
 
 export interface ContextMenuItem {
@@ -11,6 +11,7 @@ export interface ContextMenuItem {
   danger?: boolean;
   hint?: boolean;
   onClick?: () => void;
+  submenu?: ContextMenuItem[];
 }
 
 interface Props {
@@ -18,6 +19,46 @@ interface Props {
   y: number;
   items: ContextMenuItem[];
   onClose: () => void;
+}
+
+function SubMenuItem({ item, onClose }: { item: ContextMenuItem; onClose: () => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  return (
+    <div
+      ref={ref}
+      className="context-menu-item-submenu"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <span className="context-menu-item">
+        {item.icon && <span className="context-menu-icon"><i className={item.icon} /></span>}
+        <span className="context-menu-label">{item.label}</span>
+        <i className="bi bi-chevron-right context-menu-arrow" />
+      </span>
+      {open && (
+        <div className="context-menu context-submenu">
+          {item.submenu!.map((sub, j) =>
+            sub.separator ? (
+              <div key={j} className="context-menu-separator" />
+            ) : (
+              <button
+                key={sub.id}
+                className={`context-menu-item ${sub.danger ? "danger" : ""} ${sub.disabled ? "disabled" : ""}`}
+                onClick={() => { if (!sub.disabled) { sub.onClick?.(); onClose(); } }}
+                disabled={sub.disabled}
+              >
+                {sub.icon && <span className="context-menu-icon"><i className={sub.icon} /></span>}
+                <span className="context-menu-label">{sub.label}</span>
+                {sub.shortcut && <span className="context-menu-shortcut">{sub.shortcut}</span>}
+              </button>
+            )
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function ContextMenu({ x, y, items, onClose }: Props) {
@@ -45,13 +86,17 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
     const handleContextMenu = (e: MouseEvent) => {
       if (!menuRef.current?.contains(e.target as Node)) onClose();
     };
-    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("mousedown", handleClick, true);
     document.addEventListener("contextmenu", handleContextMenu, true);
     document.addEventListener("keydown", handleKey);
+    document.addEventListener("scroll", onClose, true);
+    window.addEventListener("resize", onClose);
     return () => {
-      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("mousedown", handleClick, true);
       document.removeEventListener("contextmenu", handleContextMenu, true);
       document.removeEventListener("keydown", handleKey);
+      document.removeEventListener("scroll", onClose, true);
+      window.removeEventListener("resize", onClose);
     };
   }, [onClose]);
 
@@ -67,6 +112,8 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
           <div key={i} className="context-menu-separator" />
         ) : item.hint ? (
           <div key={item.id} className="context-menu-hint">{item.label}</div>
+        ) : item.submenu ? (
+          <SubMenuItem key={item.id} item={item} onClose={onClose} />
         ) : (
           <button
             key={item.id}
