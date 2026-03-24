@@ -139,17 +139,37 @@ function hasDistDir(): boolean {
   return existsSync(resolve(import.meta.dirname!, "../../ui/dist"));
 }
 
-export async function startServer(filePath: string, port: number = 3000, devMode: boolean = false) {
-  const absPath = resolve(filePath);
-  const notebookDir = dirname(absPath);
-  process.chdir(notebookDir);
-  const notebook = await Notebook.load(absPath);
+const LAST_NOTEBOOK_FILE = ".yeastbook-dev-notebook";
 
-  // Track this notebook as recently opened
-  try {
-    const { addRecent } = await import("./dashboard.ts");
-    await addRecent(absPath);
-  } catch {}
+async function saveLastNotebook(path: string) {
+  try { await Bun.write(resolve(LAST_NOTEBOOK_FILE), path); } catch {}
+}
+
+export async function startServer(filePath: string | null, port: number = 3000, devMode: boolean = false) {
+  let absPath = filePath !== null ? resolve(filePath) : null;
+
+  // Try to restore last opened notebook if none specified
+  if (!absPath) {
+    try {
+      const saved = (await Bun.file(resolve(LAST_NOTEBOOK_FILE)).text()).trim();
+      if (saved && existsSync(saved)) {
+        absPath = saved;
+      }
+    } catch {}
+  }
+
+  const notebookDir = absPath ? dirname(absPath) : process.cwd();
+  process.chdir(notebookDir);
+  const notebook = absPath ? await Notebook.load(absPath) : Notebook.createEmpty();
+
+  // Track this notebook as recently opened and persist for reload
+  if (absPath) {
+    saveLastNotebook(absPath);
+    try {
+      const { addRecent } = await import("./dashboard.ts");
+      await addRecent(absPath);
+    } catch {}
+  }
 
   const settings = await loadSettings();
 
@@ -182,7 +202,8 @@ export async function startServer(filePath: string, port: number = 3000, devMode
   // Load .env from notebook directory into process.env
   let envKeys: string[] = [];
   async function reloadEnv() {
-    const vars = await loadEnvFile(absPath);
+    const envRef = absPath ?? resolve("_placeholder");
+    const vars = await loadEnvFile(envRef);
     Object.assign(process.env, vars);
     envKeys = Object.keys(vars);
   }
@@ -192,7 +213,7 @@ export async function startServer(filePath: string, port: number = 3000, devMode
 
   const state: ServerState = {
     notebook,
-    filePath: absPath,
+    filePath: absPath ?? "",
     executionCount: 0,
     context: {},
     pythonKernel: null,
@@ -207,19 +228,21 @@ export async function startServer(filePath: string, port: number = 3000, devMode
 
   // Restore session snapshot if available
   let lastSnapshotVars: Record<string, { value: unknown; type: string; serializable: boolean }> = {};
-  const snapshot = await loadSnapshot(absPath);
-  if (snapshot) {
-    let restoredCount = 0;
-    for (const [key, entry] of Object.entries(snapshot.variables)) {
-      if (entry.serializable) {
-        state.context[key] = entry.value;
-        (globalThis as Record<string, unknown>)[key] = entry.value;
-        restoredCount++;
+  if (absPath) {
+    const snapshot = await loadSnapshot(absPath);
+    if (snapshot) {
+      let restoredCount = 0;
+      for (const [key, entry] of Object.entries(snapshot.variables)) {
+        if (entry.serializable) {
+          state.context[key] = entry.value;
+          (globalThis as Record<string, unknown>)[key] = entry.value;
+          restoredCount++;
+        }
       }
+      state.executionCount = snapshot.executionCount;
+      lastSnapshotVars = snapshot.variables;
+      console.log(`\x1b[36m↩ Session restored — ${restoredCount} variables recovered\x1b[0m`);
     }
-    state.executionCount = snapshot.executionCount;
-    lastSnapshotVars = snapshot.variables;
-    console.log(`\x1b[36m↩ Session restored — ${restoredCount} variables recovered\x1b[0m`);
   }
 
   const clients = new Set<any>();
@@ -241,11 +264,18 @@ export async function startServer(filePath: string, port: number = 3000, devMode
     } catch { /* skip if can't read */ }
   }
 
+  async function saveIfHasFile() {
+    if (state.filePath) {
+      ownWriteMarker.mark();
+      await state.notebook.save(state.filePath);
+    }
+  }
+
   function scheduleAutoSave() {
     if (autoSaveTimer) clearTimeout(autoSaveTimer);
-    if (state.deleted) return;
+    if (state.deleted || !state.filePath) return;
     autoSaveTimer = setTimeout(async () => {
-      if (state.deleted) return;
+      if (state.deleted || !state.filePath) return;
       try {
         await embedDepsInMetadata();
         ownWriteMarker.mark();
@@ -257,26 +287,29 @@ export async function startServer(filePath: string, port: number = 3000, devMode
     }, 30_000);
   }
 
-  const stopWatcher = watchNotebook(absPath, async () => {
-    if (state.deleted) return;
-    // If the file was removed externally, don't try to reload
-    if (!existsSync(state.filePath)) {
-      state.deleted = true;
-      stopWatcher();
-      if (autoSaveTimer) { clearTimeout(autoSaveTimer); autoSaveTimer = null; }
-      for (const c of clients) {
-        try { c.send(JSON.stringify({ type: "notebook_deleted" })); } catch {}
+  let stopWatcher: (() => void) | null = null;
+  if (absPath) {
+    stopWatcher = watchNotebook(absPath, async () => {
+      if (state.deleted) return;
+      // If the file was removed externally, don't try to reload
+      if (!existsSync(state.filePath)) {
+        state.deleted = true;
+        stopWatcher?.();
+        if (autoSaveTimer) { clearTimeout(autoSaveTimer); autoSaveTimer = null; }
+        for (const c of clients) {
+          try { c.send(JSON.stringify({ type: "notebook_deleted" })); } catch {}
+        }
+        return;
       }
-      return;
-    }
-    try {
-      const updated = await Notebook.load(state.filePath);
-      state.notebook = updated;
-      for (const c of clients) {
-        try { c.send(JSON.stringify({ type: "notebook_updated" })); } catch {}
-      }
-    } catch {}
-  }, ownWriteMarker);
+      try {
+        const updated = await Notebook.load(state.filePath);
+        state.notebook = updated;
+        for (const c of clients) {
+          try { c.send(JSON.stringify({ type: "notebook_updated" })); } catch {}
+        }
+      } catch {}
+    }, ownWriteMarker);
+  }
 
   const distDir = resolve(import.meta.dirname!, "../../ui/dist");
 
@@ -368,17 +401,16 @@ export async function startServer(filePath: string, port: number = 3000, devMode
         });
       },
       "/api/notebook": {
-        GET: () => Response.json({ ...state.notebook.toJSON(), filePath: state.filePath, fileName: basename(state.filePath), fileFormat: state.notebook.format }),
+        GET: () => Response.json({ ...state.notebook.toJSON(), filePath: state.filePath || null, fileName: state.filePath ? basename(state.filePath) : "Untitled", fileFormat: state.notebook.format }),
       },
       "/api/notebook/path": {
-        GET: () => Response.json({ path: state.filePath }),
+        GET: () => Response.json({ path: state.filePath || null }),
       },
       "/api/cells": {
         POST: async (req) => {
           const body = await req.json() as { type: "code" | "markdown"; source?: string };
           const id = state.notebook.addCell(body.type, body.source ?? "");
-          ownWriteMarker.mark();
-          await state.notebook.save(state.filePath);
+          await saveIfHasFile();
           scheduleAutoSave();
           return Response.json({ id });
         },
@@ -386,8 +418,7 @@ export async function startServer(filePath: string, port: number = 3000, devMode
       "/api/cells/:id": {
         DELETE: async (req) => {
           state.notebook.deleteCell(req.params.id);
-          ownWriteMarker.mark();
-          await state.notebook.save(state.filePath);
+          await saveIfHasFile();
           scheduleAutoSave();
           return Response.json({ ok: true });
         },
@@ -402,8 +433,7 @@ export async function startServer(filePath: string, port: number = 3000, devMode
           if (body.metadata) {
             state.notebook.updateCellMetadata(req.params.id, body.metadata);
           }
-          ownWriteMarker.mark();
-          await state.notebook.save(state.filePath);
+          await saveIfHasFile();
           scheduleAutoSave();
           return Response.json({ ok: true });
         },
@@ -412,8 +442,7 @@ export async function startServer(filePath: string, port: number = 3000, devMode
         POST: async (req) => {
           const body = await req.json() as { direction: "up" | "down" };
           state.notebook.moveCell(req.params.id, body.direction);
-          ownWriteMarker.mark();
-          await state.notebook.save(state.filePath);
+          await saveIfHasFile();
           scheduleAutoSave();
           return Response.json({ ok: true });
         },
@@ -422,8 +451,7 @@ export async function startServer(filePath: string, port: number = 3000, devMode
         POST: async (req) => {
           const body = await req.json() as { toIndex: number };
           state.notebook.reorderCell(req.params.id, body.toIndex);
-          ownWriteMarker.mark();
-          await state.notebook.save(state.filePath);
+          await saveIfHasFile();
           scheduleAutoSave();
           return Response.json({ ok: true });
         },
@@ -484,10 +512,19 @@ export async function startServer(filePath: string, port: number = 3000, devMode
             await state.pythonKernel.shutdown();
             state.pythonKernel = null;
           }
+          // Ensure pip is available in the selected environment
+          const pipCheck = Bun.spawn([pythonPath, "-m", "pip", "--version"], {
+            stdout: "pipe", stderr: "pipe",
+          });
+          if (await pipCheck.exited !== 0) {
+            const ep = Bun.spawn([pythonPath, "-m", "ensurepip", "--upgrade"], {
+              stdout: "pipe", stderr: "pipe",
+            });
+            await ep.exited;
+          }
           // Store preference in notebook metadata
           state.notebook.ybk.metadata.pythonPath = pythonPath;
-          ownWriteMarker.mark();
-          await state.notebook.save(state.filePath);
+          await saveIfHasFile();
           // Broadcast new status
           for (const c of clients) {
             c.send(JSON.stringify({ type: "python_status", status: "available", pythonPath }));
@@ -497,8 +534,7 @@ export async function startServer(filePath: string, port: number = 3000, devMode
       },
       "/api/save": {
         POST: async () => {
-          ownWriteMarker.mark();
-          await state.notebook.save(state.filePath);
+          await saveIfHasFile();
           scheduleAutoSave();
           return Response.json({ ok: true });
         },
@@ -511,6 +547,7 @@ export async function startServer(filePath: string, port: number = 3000, devMode
           state.filePath = newPath;
           state.executionCount = 0;
           state.context = {};
+          saveLastNotebook(newPath);
           return Response.json({ ...nb.toJSON(), filePath: newPath, fileName: basename(newPath), fileFormat: nb.format });
         },
       },
@@ -523,6 +560,7 @@ export async function startServer(filePath: string, port: number = 3000, devMode
           state.filePath = absPath;
           state.executionCount = 0;
           state.context = {};
+          saveLastNotebook(absPath);
           return Response.json({ ...nb.toJSON(), filePath: absPath, fileName: basename(absPath), fileFormat: nb.format });
         },
       },
@@ -555,8 +593,7 @@ export async function startServer(filePath: string, port: number = 3000, devMode
         POST: async (req) => {
           const body = await req.json() as { type: "code" | "markdown"; source?: string; afterId?: string };
           const id = state.notebook.insertCellAfter(body.type, body.source ?? "", body.afterId);
-          ownWriteMarker.mark();
-          await state.notebook.save(state.filePath);
+          await saveIfHasFile();
           scheduleAutoSave();
           return Response.json({ id });
         },
@@ -568,7 +605,7 @@ export async function startServer(filePath: string, port: number = 3000, devMode
             ...settings,
             version: pkg.version,
             bunVersion: Bun.version,
-            notebookDir: dirname(state.filePath),
+            notebookDir: state.filePath ? dirname(state.filePath) : process.cwd(),
           });
         },
         POST: async (req) => {
@@ -638,6 +675,16 @@ export async function startServer(filePath: string, port: number = 3000, devMode
           if (exitCode !== 0) {
             const stderr = await new Response(proc.stderr).text();
             return Response.json({ success: false, error: stderr.trim() }, { status: 500 });
+          }
+          // Ensure pip is available in the venv
+          const pipCheck = Bun.spawn([join(venvPath, "bin", "python3"), "-m", "pip", "--version"], {
+            cwd: notebookDir, stdout: "pipe", stderr: "pipe",
+          });
+          if (await pipCheck.exited !== 0) {
+            const ensurepip = Bun.spawn([join(venvPath, "bin", "python3"), "-m", "ensurepip", "--upgrade"], {
+              cwd: notebookDir, stdout: "pipe", stderr: "pipe",
+            });
+            await ensurepip.exited;
           }
           return Response.json({ success: true, path: venvPath });
         },
@@ -800,6 +847,40 @@ declare function createSelect(config: { options: string[]; value?: string; label
           return Response.json({ tree });
         },
       },
+      "/api/files/list": {
+        GET: async (req) => {
+          const url = new URL(req.url);
+          const dirPath = url.searchParams.get("path") ?? "";
+          const cwd = process.cwd();
+          const abs = dirPath ? validatePath(dirPath, cwd) : cwd;
+          if (!abs) return new Response("Invalid path", { status: 403 });
+          try {
+            const entries = await readdir(abs, { withFileTypes: true });
+            const items: FileNode[] = [];
+            for (const entry of entries) {
+              if (shouldIgnore(entry.name)) continue;
+              const fullPath = join(abs, entry.name);
+              const relPath = relative(cwd, fullPath);
+              if (entry.isDirectory()) {
+                items.push({ name: entry.name, path: relPath, type: "directory" });
+              } else {
+                const ext = extname(entry.name).toLowerCase();
+                const isNotebook = ext === ".ybk" || ext === ".ipynb";
+                let size = 0;
+                try { size = (await stat(fullPath)).size; } catch {}
+                items.push({ name: entry.name, path: relPath, type: "file", size, isNotebook });
+              }
+            }
+            items.sort((a, b) => {
+              if (a.type !== b.type) return a.type === "directory" ? -1 : 1;
+              return a.name.localeCompare(b.name);
+            });
+            return Response.json({ items, path: dirPath ? relative(cwd, abs) : "" });
+          } catch {
+            return new Response("Directory not found", { status: 404 });
+          }
+        },
+      },
       "/api/files/read": {
         GET: async (req) => {
           const url = new URL(req.url);
@@ -856,7 +937,7 @@ declare function createSelect(config: { options: string[]; value?: string; label
           // If the deleted file is the currently-open notebook, stop watching/saving
           if (abs === state.filePath) {
             state.deleted = true;
-            stopWatcher();
+            stopWatcher?.();
             if (autoSaveTimer) { clearTimeout(autoSaveTimer); autoSaveTimer = null; }
             for (const c of clients) {
               try { c.send(JSON.stringify({ type: "notebook_deleted" })); } catch {}
@@ -1040,14 +1121,13 @@ declare function createSelect(config: { options: string[]; value?: string; label
                 executionCount: state.executionCount,
               }));
 
-              ownWriteMarker.mark();
-              await state.notebook.save(state.filePath);
+              await saveIfHasFile();
               scheduleAutoSave();
 
               // Save session snapshot & broadcast variables
               const vars = serializeContext(state.context);
               lastSnapshotVars = vars;
-              await saveSnapshot(state.filePath, {
+              if (state.filePath) await saveSnapshot(state.filePath, {
                 notebookPath: state.filePath,
                 savedAt: new Date().toISOString(),
                 executionCount: state.executionCount,
@@ -1096,7 +1176,7 @@ declare function createSelect(config: { options: string[]; value?: string; label
                     ...(cell.outputs || []),
                     { output_type: "stream", name: "stdout", text: [summary + "\n"] },
                   ];
-                  await state.notebook.save(state.filePath);
+                  await saveIfHasFile();
                 }
 
                 if (result.success) {
@@ -1108,7 +1188,7 @@ declare function createSelect(config: { options: string[]; value?: string; label
                     for (const [pkg, ver] of Object.entries(result.versions)) {
                       state.notebook.ybk.metadata.dependencies[pkg] = `^${ver}`;
                     }
-                    await state.notebook.save(state.filePath);
+                    await saveIfHasFile();
                     // Notify clients of updated dependencies
                     for (const client of clients) {
                       client.send(JSON.stringify({
@@ -1290,14 +1370,13 @@ declare function createSelect(config: { options: string[]; value?: string; label
               ws.send(JSON.stringify({
                 type: "status", cellId: msg.cellId, status: "idle", executionCount: state.executionCount,
               }));
-              ownWriteMarker.mark();
-              await state.notebook.save(state.filePath);
+              await saveIfHasFile();
               scheduleAutoSave();
 
               // Save session snapshot & broadcast variables
               const vars = serializeContext(state.context);
               lastSnapshotVars = vars;
-              await saveSnapshot(state.filePath, {
+              if (state.filePath) await saveSnapshot(state.filePath, {
                 notebookPath: state.filePath,
                 savedAt: new Date().toISOString(),
                 executionCount: state.executionCount,
@@ -1310,13 +1389,14 @@ declare function createSelect(config: { options: string[]; value?: string; label
               // Magic-only cell: update source but send idle status
               state.notebook.updateCellSource(msg.cellId, msg.code);
               ws.send(JSON.stringify({ type: "status", cellId: msg.cellId, status: "idle" }));
-              ownWriteMarker.mark();
-              await state.notebook.save(state.filePath);
+              await saveIfHasFile();
               scheduleAutoSave();
             }
           } else if (msg.type === "interrupt") {
             interruptExecution();
             state.pythonKernel?.interrupt();
+            // Send acknowledgment so the UI can show immediate feedback
+            ws.send(JSON.stringify({ type: "interrupt_ack" }));
           } else if (msg.type === "variable_inspect") {
             const name = msg.name;
             const val = (state.context as Record<string, unknown>)[name];
@@ -1416,6 +1496,19 @@ declare function createSelect(config: { options: string[]; value?: string; label
                 }
 
                 pythonPath = join(venvPath, "bin", "python3");
+
+                // Ensure pip is available in the venv
+                const pipCheck = Bun.spawn([pythonPath, "-m", "pip", "--version"], {
+                  cwd: notebookDir, stdout: "pipe", stderr: "pipe",
+                });
+                if (await pipCheck.exited !== 0) {
+                  ws.send(JSON.stringify({ type: "bootstrap_log", text: "Installing pip...\n", stream: "stdout" }));
+                  const ensurepip = Bun.spawn([pythonPath, "-m", "ensurepip", "--upgrade"], {
+                    cwd: notebookDir, stdout: "pipe", stderr: "pipe",
+                  });
+                  await streamProcess(ensurepip);
+                }
+
                 ws.send(JSON.stringify({ type: "bootstrap_log", text: "Virtual environment created.\n", stream: "stdout" }));
 
               } else if (msg.action === "use-system") {
@@ -1436,7 +1529,7 @@ declare function createSelect(config: { options: string[]; value?: string; label
               if (pythonPath) {
                 // Save preference to notebook metadata
                 state.notebook.ybk.metadata.pythonPath = pythonPath;
-                await state.notebook.save(state.filePath);
+                await saveIfHasFile();
 
                 // Broadcast python_status
                 for (const c of clients) {
@@ -1463,6 +1556,17 @@ declare function createSelect(config: { options: string[]; value?: string; label
                 }
 
                 if (packages.length > 0 && pythonPath) {
+                  // Ensure pip is available before installing
+                  const pipVer = Bun.spawn([pythonPath, "-m", "pip", "--version"], {
+                    cwd: notebookDir, stdout: "pipe", stderr: "pipe",
+                  });
+                  if (await pipVer.exited !== 0) {
+                    ws.send(JSON.stringify({ type: "bootstrap_log", text: "pip not found, installing via ensurepip...\n", stream: "stdout" }));
+                    const ep = Bun.spawn([pythonPath, "-m", "ensurepip", "--upgrade"], {
+                      cwd: notebookDir, stdout: "pipe", stderr: "pipe",
+                    });
+                    await streamProcess(ep);
+                  }
                   ws.send(JSON.stringify({ type: "bootstrap_log", text: `Installing packages...\n`, stream: "stdout" }));
                   const pipProc = Bun.spawn([pythonPath, "-m", "pip", "install", ...packages], {
                     cwd: notebookDir, stdout: "pipe", stderr: "pipe",
