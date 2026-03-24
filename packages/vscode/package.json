@@ -1,19 +1,24 @@
 {
   "name": "vscode-yeastbook",
   "displayName": "Yeastbook",
-  "description": "TypeScript notebooks powered by Bun",
+  "description": "A TypeScript notebook powered by Bun. One command, zero config. No Python, no conda, no kernel installs.",
   "version": "0.0.1",
   "publisher": "codepawl",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nxank4/yeastbook.git",
+    "url": "https://github.com/codepawl/yeastbook.git",
     "directory": "packages/vscode"
+  },
+  "homepage": "https://github.com/codepawl/yeastbook",
+  "bugs": {
+    "url": "https://github.com/codepawl/yeastbook/issues"
   },
   "license": "MIT",
   "engines": { "vscode": "^1.85.0" },
   "activationEvents": ["onNotebook:yeastbook"],
   "icon": "icon.png",
-  "categories": ["Notebooks"],
+  "categories": ["Notebooks", "Programming Languages"],
+  "keywords": ["typescript", "notebook", "bun", "jupyter", "yeastbook"],
   "main": "./dist/extension.js",
   "contributes": {
     "notebooks": [{
@@ -49,6 +54,11 @@
           "type": "number",
           "default": 0,
           "description": "Fixed port for yeastbook server (0 = auto)"
+        },
+        "yeastbook.cliPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to yeastbook CLI (cli.ts). Auto-detected if empty."
         },
         "yeastbook.bunPath": {
           "type": "string",
