@@ -106,7 +106,10 @@ export class YbkKernel {
         const cliPath = this.findYeastbook();
         if (!cliPath) {
           this.setStatus("error");
-          throw new Error("yeastbook CLI not found. Install: bun install -g yeastbook");
+          throw new Error(
+            "yeastbook CLI not found. Set \"yeastbook.cliPath\" in VS Code settings to the path of your cli.ts, " +
+            "or install globally: bun install -g yeastbook"
+          );
         }
 
         progress.report({ increment: 10, message: "Spawning server..." });
@@ -378,9 +381,15 @@ export class YbkKernel {
       try {
         await this.startServer(notebook.uri.fsPath);
       } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
         vscode.window.showErrorMessage(
-          `Failed to start kernel: ${e instanceof Error ? e.message : e}`,
-        );
+          `Failed to start kernel: ${msg}`,
+          "Installation Guide",
+        ).then((choice) => {
+          if (choice === "Installation Guide") {
+            vscode.env.openExternal(vscode.Uri.parse("https://github.com/codepawl/yeastbook#install"));
+          }
+        });
         return;
       }
     }
@@ -470,11 +479,17 @@ export class YbkKernel {
   }
 
   private findYeastbook(): string | null {
-    // 1. Check global install
-    try {
-      const p = execFileSync("which", ["yeastbook"], { encoding: "utf-8" }).trim();
-      if (p) return p;
-    } catch { /* not found */ }
+    // 0. User-configured path takes priority
+    const config = vscode.workspace.getConfiguration("yeastbook");
+    const customPath = config.get<string>("cliPath", "");
+    if (customPath) {
+      try { if (statSync(customPath).isFile()) return customPath; } catch { /* skip */ }
+    }
+
+    // 1. Check relative to extension install path (monorepo sibling: ../app/src/cli.ts)
+    const extDir = this.context.extensionPath;
+    const monorepoCliFromExt = join(extDir, "..", "app", "src", "cli.ts");
+    try { if (statSync(monorepoCliFromExt).isFile()) return monorepoCliFromExt; } catch { /* skip */ }
 
     // 2. Check workspace node_modules
     for (const folder of vscode.workspace.workspaceFolders ?? []) {
@@ -482,11 +497,17 @@ export class YbkKernel {
       try { if (statSync(p).isFile()) return p; } catch { /* skip */ }
     }
 
-    // 3. Check monorepo CLI path
+    // 3. Check monorepo CLI path from workspace root
     for (const folder of vscode.workspace.workspaceFolders ?? []) {
       const p = join(folder.uri.fsPath, "packages", "app", "src", "cli.ts");
       try { if (statSync(p).isFile()) return p; } catch { /* skip */ }
     }
+
+    // 4. Check global install
+    try {
+      const p = execFileSync("which", ["yeastbook"], { encoding: "utf-8" }).trim();
+      if (p) return p;
+    } catch { /* not found */ }
 
     return null;
   }

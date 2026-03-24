@@ -26,6 +26,7 @@ jobs:
         with:
           path: |
             node_modules
+            packages/*/node_modules
             ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
 
@@ -59,6 +60,7 @@ jobs:
         with:
           path: |
             node_modules
+            packages/*/node_modules
             ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
 
@@ -132,6 +134,7 @@ jobs:
         with:
           path: |
             node_modules
+            packages/*/node_modules
             ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
 

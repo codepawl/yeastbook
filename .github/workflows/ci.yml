@@ -23,6 +23,7 @@ jobs:
         with:
           path: |
             node_modules
+            packages/*/node_modules
             ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
 
@@ -36,6 +37,7 @@ jobs:
         with:
           path: |
             node_modules
+            packages/*/node_modules
             ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
       - run: bunx tsc --noEmit
@@ -50,6 +52,7 @@ jobs:
         with:
           path: |
             node_modules
+            packages/*/node_modules
             ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
       - run: bun test
@@ -64,6 +67,7 @@ jobs:
         with:
           path: |
             node_modules
+            packages/*/node_modules
             ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
       - run: bun run build:ui
@@ -80,6 +84,7 @@ jobs:
         with:
           path: |
             node_modules
+            packages/*/node_modules
             ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
       - run: cd packages/vscode && bun install && bun run build
