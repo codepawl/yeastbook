@@ -35,6 +35,9 @@ export function detectOutputType(value: unknown): OutputData | null {
     if (v.__type === "html" && typeof v.html === "string") {
       return { type: "html", html: v.html };
     }
+    if (v.__type === "math" && typeof v.latex === "string") {
+      return { type: "math", latex: v.latex, displayMode: v.displayMode !== false } as any;
+    }
   }
 
   // Check for MIME output
