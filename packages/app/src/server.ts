@@ -12,9 +12,11 @@ import { PythonKernel, YeastBridge, scanPythonEnvironments } from "./kernel/pyth
 import type { SessionSnapshot } from "./kernel/snapshot.ts";
 import { watchNotebook, createOwnWriteMarker } from "./watcher.ts";
 import { PluginLoader } from "./plugins/loader.ts";
+import { logger } from "./logger.ts";
 import {
   Notebook, loadNotebook as loadNb, ybkToIpynb, detectFormat, createEmptyYbk,
   parseMagicCommands, detectOutputType, DEFAULT_SETTINGS,
+  detectMimeType, isTextMime,
 } from "@codepawl/yeastbook-core";
 import type { Settings } from "@codepawl/yeastbook-core";
 
@@ -192,10 +194,10 @@ export async function startServer(filePath: string | null, port: number = 3000, 
       }
     }
     if (missing.length > 0) {
-      console.log(`\x1b[36m📦 Installing ${missing.length} missing dependencies...\x1b[0m`);
+      logger.info("deps", `Installing ${missing.length} missing dependencies...`);
       const proc = Bun.spawn(["bun", "add", ...missing], { stdout: "inherit", stderr: "inherit" });
       await proc.exited;
-      console.log(`\x1b[32m✓ Dependencies ready\x1b[0m`);
+      logger.success("Dependencies ready");
     }
   }
 
@@ -241,7 +243,7 @@ export async function startServer(filePath: string | null, port: number = 3000, 
       }
       state.executionCount = snapshot.executionCount;
       lastSnapshotVars = snapshot.variables;
-      console.log(`\x1b[36m↩ Session restored — ${restoredCount} variables recovered\x1b[0m`);
+      logger.success(`Session restored \u2014 ${restoredCount} variables recovered`);
     }
   }
 
@@ -881,6 +883,63 @@ declare function createSelect(config: { options: string[]; value?: string; label
           }
         },
       },
+      "/api/file": {
+        GET: async (req) => {
+          const url = new URL(req.url);
+          const filePath = url.searchParams.get("path");
+          if (!filePath) return new Response("Missing path", { status: 400 });
+          const cwd = process.cwd();
+          const abs = validatePath(filePath, cwd);
+          if (!abs) return new Response("Access denied", { status: 403 });
+
+          const file = Bun.file(abs);
+          if (!await file.exists()) return new Response("Not found", { status: 404 });
+
+          const mimeType = detectMimeType(abs, file.type);
+          const st = await stat(abs);
+
+          // Handle range requests (for video/audio seeking)
+          const rangeHeader = req.headers.get("Range");
+          if (rangeHeader) {
+            const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+            if (match) {
+              const start = parseInt(match[1]!);
+              const end = match[2] ? parseInt(match[2]) : Math.min(start + 1024 * 1024, st.size - 1);
+              const chunkSize = end - start + 1;
+              return new Response(file.slice(start, end + 1), {
+                status: 206,
+                headers: {
+                  "Content-Type": mimeType,
+                  "Content-Range": `bytes ${start}-${end}/${st.size}`,
+                  "Accept-Ranges": "bytes",
+                  "Content-Length": String(chunkSize),
+                },
+              });
+            }
+          }
+
+          return new Response(file, {
+            headers: {
+              "Content-Type": mimeType,
+              "Accept-Ranges": "bytes",
+              "Content-Length": String(st.size),
+              "Cache-Control": "private, max-age=60",
+            },
+          });
+        },
+      },
+      "/api/upload": {
+        POST: async (req) => {
+          const destPath = req.headers.get("X-File-Path");
+          if (!destPath) return new Response("Missing path", { status: 400 });
+          const cwd = process.cwd();
+          const abs = validatePath(destPath, cwd);
+          if (!abs) return new Response("Access denied", { status: 403 });
+          await mkdir(dirname(abs), { recursive: true });
+          await Bun.write(abs, req.body!);
+          return Response.json({ ok: true });
+        },
+      },
       "/api/files/read": {
         GET: async (req) => {
           const url = new URL(req.url);
@@ -1259,6 +1318,52 @@ declare function createSelect(config: { options: string[]; value?: string; label
                   type: "stream", cellId: msg.cellId, name: "stdout",
                   text: `♻ Reloaded: ${cmd.modules.join(", ")}\n`,
                 }));
+              } else if (cmd.type === "open") {
+                try {
+                  const notebookDir = state.filePath ? dirname(state.filePath) : process.cwd();
+                  const abs = resolve(notebookDir, cmd.filePath);
+                  // Security: must be within notebook directory
+                  if (!abs.startsWith(notebookDir)) {
+                    ws.send(JSON.stringify({ type: "error", cellId: msg.cellId, ename: "SecurityError", evalue: "Path outside notebook directory", traceback: [] }));
+                    continue;
+                  }
+                  const file = Bun.file(abs);
+                  if (!await file.exists()) {
+                    ws.send(JSON.stringify({ type: "error", cellId: msg.cellId, ename: "FileNotFoundError", evalue: `File not found: ${cmd.filePath}`, traceback: [] }));
+                    continue;
+                  }
+                  const st = await stat(abs);
+                  const mimeType = detectMimeType(abs, file.type);
+                  const streamUrl = `/api/file?path=${encodeURIComponent(abs)}`;
+
+                  if (st.size > 5 * 1024 * 1024) {
+                    // Large files — stream via URL
+                    ws.send(JSON.stringify({
+                      type: "result", cellId: msg.cellId,
+                      value: `${basename(abs)} (${(st.size / 1024 / 1024).toFixed(1)} MB)`,
+                      executionCount: ++state.executionCount,
+                      richOutput: { type: "file", path: abs, name: basename(abs), mimeType, size: st.size, streamUrl, mode: "stream" },
+                    }));
+                  } else {
+                    // Small files — embed content
+                    const isText = isTextMime(mimeType);
+                    let content: string;
+                    if (isText) {
+                      content = await file.text();
+                    } else {
+                      const buf = await file.arrayBuffer();
+                      content = Buffer.from(buf).toString("base64");
+                    }
+                    ws.send(JSON.stringify({
+                      type: "result", cellId: msg.cellId,
+                      value: `${basename(abs)} (${st.size < 1024 ? st.size + " B" : (st.size / 1024).toFixed(1) + " KB"})`,
+                      executionCount: ++state.executionCount,
+                      richOutput: { type: "file", path: abs, name: basename(abs), mimeType, size: st.size, content, streamUrl, mode: "embedded" },
+                    }));
+                  }
+                } catch (e: any) {
+                  ws.send(JSON.stringify({ type: "error", cellId: msg.cellId, ename: "Error", evalue: e.message, traceback: [] }));
+                }
               } else if (cmd.type === "sql_attach") {
                 try {
                   if (!state.sqlEngine) {
@@ -1614,5 +1719,5 @@ declare function createSelect(config: { options: string[]; value?: string; label
     },
   });
 
-  return server;
+  return Object.assign(server, { getClientCount: () => clients.size });
 }

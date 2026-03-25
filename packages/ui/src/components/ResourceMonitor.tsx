@@ -59,7 +59,7 @@ export function ResourceMonitor({ performanceMode, onSuggestPerfMode }: Props) {
   }, [performanceMode]);
 
   if (!stats) {
-    return <div className="resource-empty"><i className="bi bi-hourglass-split" /> Loading stats...</div>;
+    return <div className="resource-empty"><span className="loading-inline"><img src="./favicon.png" className="loading-mascot-sm" alt="" /> Loading stats...</span></div>;
   }
 
   const showLowMemWarning = !performanceMode && !lowMemDismissed && stats.memPercent !== null && stats.memPercent >= 85;

@@ -17,7 +17,9 @@ export interface ChartConfig {
 }
 
 function isPlainObject(val: unknown): val is Record<string, unknown> {
-  return val !== null && typeof val === "object" && !Array.isArray(val) && val.constructor === Object;
+  if (val === null || typeof val !== "object" || Array.isArray(val)) return false;
+  const proto = Object.getPrototypeOf(val);
+  return proto === Object.prototype || proto === null;
 }
 
 export function detectOutputType(value: unknown): OutputData | null {

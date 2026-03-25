@@ -267,6 +267,14 @@ input, textarea, select {
 .menubar-action-btn.active { background: var(--bg-hover); color: var(--text-primary); }
 .menubar-action-btn:disabled { opacity: 0.4; cursor: default; }
 .menubar-action-btn:disabled:hover { background: none; }
+.menubar-error-btn { color: var(--error-color, #ef4444); }
+.menubar-error-btn:hover { background: rgba(239, 68, 68, 0.1); color: var(--error-color, #ef4444); }
+
+@keyframes cell-error-flash {
+  0%   { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.5); }
+  100% { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0); }
+}
+.cell-error-highlight { animation: cell-error-flash 0.6s ease-out; }
 
 .menu-container {
   position: relative;
@@ -1560,29 +1568,18 @@ input, textarea, select {
   padding: 4px 0;
 }
 
-/* --- Loading bar --- */
+/* --- Loading bar (mascot bounce) --- */
 .loading-bar {
-  width: 100%;
-  height: 3px;
-  background: var(--border);
-  border-radius: 2px;
-  overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  height: 28px;
   margin: 4px 0;
 }
-
 .loading-bar::after {
   content: "";
   display: block;
-  width: 40%;
-  height: 100%;
-  background: var(--accent);
-  border-radius: 2px;
-  animation: loading-slide 1.2s ease-in-out infinite;
-}
-
-@keyframes loading-slide {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(350%); }
+  width: 22px; height: 22px;
+  background: url('./favicon.png') center/contain no-repeat;
+  animation: mascot-bounce 1.2s ease-in-out infinite;
 }
 
 /* Running indicator inside cell */
@@ -1617,6 +1614,128 @@ input, textarea, select {
 }
 .notebook-loading .loading-bar { max-width: 200px; }
 .notebook-loading p { margin-top: 12px; }
+
+/* Full-page loading state — covers entire notebook-layout */
+.notebook-loading-full {
+  flex: 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  color: var(--text-muted); font-size: 13px; gap: 16px;
+}
+.notebook-loading-full p { margin: 0; }
+
+/* Mascot loading animations */
+.loading-mascot {
+  width: 48px; height: 48px;
+  background: url('./favicon.png') center/contain no-repeat;
+  animation: mascot-bounce 1.2s ease-in-out infinite;
+}
+.loading-mascot-sm {
+  width: 20px; height: 20px;
+  vertical-align: middle;
+  animation: mascot-bounce 1.2s ease-in-out infinite;
+}
+.loading-inline {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: var(--text-muted); font-size: 12px;
+}
+@keyframes mascot-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+/* Skeleton pulse for sidebar panels */
+.skeleton-line {
+  height: 12px;
+  border-radius: 4px;
+  background: var(--border);
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+.skeleton-block {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 12px 14px;
+}
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.15; }
+}
+
+/* --- File preview output (cell) --- */
+.file-preview-output {
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.file-preview-output-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-toolbar);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 12px;
+}
+.file-preview-output-name { font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-preview-output-meta { color: var(--text-muted); flex-shrink: 0; }
+.file-preview-output-download {
+  color: var(--text-muted); text-decoration: none; flex-shrink: 0;
+  padding: 2px 4px; border-radius: 3px;
+}
+.file-preview-output-download:hover { color: var(--accent); background: var(--bg-app); }
+.file-preview-output-body { padding: 8px; overflow: auto; max-height: 700px; }
+.file-preview-empty { color: var(--text-muted); font-size: 12px; padding: 12px; text-align: center; }
+
+/* CSV preview */
+.csv-preview { overflow: auto; }
+.csv-truncate-notice {
+  padding: 6px 10px; font-size: 11px; color: var(--text-muted);
+  background: var(--bg-toolbar); border-bottom: 1px solid var(--border-subtle);
+}
+.csv-table-wrapper { overflow-x: auto; }
+.csv-table { width: 100%; border-collapse: collapse; font-size: 12px; font-family: "JetBrains Mono", monospace; }
+.csv-table th {
+  text-align: left; padding: 6px 10px; font-weight: 500;
+  background: var(--bg-toolbar); border-bottom: 1px solid var(--border-subtle);
+  position: sticky; top: 0; white-space: nowrap;
+}
+.csv-table td {
+  padding: 4px 10px; border-bottom: 1px solid var(--border-subtle);
+  max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.csv-table tr:hover td { background: var(--bg-app); }
+.csv-pagination {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  padding: 8px; font-size: 12px; color: var(--text-muted);
+  border-top: 1px solid var(--border-subtle);
+}
+.csv-pagination button {
+  background: none; border: 1px solid var(--border-subtle); border-radius: 4px;
+  padding: 2px 8px; cursor: pointer; color: var(--text-secondary); font-size: 12px;
+}
+.csv-pagination button:disabled { opacity: 0.3; cursor: default; }
+.csv-pagination button:not(:disabled):hover { background: var(--bg-toolbar); }
+
+/* Code preview */
+.code-preview { overflow: auto; }
+.code-preview-content {
+  margin: 0; padding: 8px; font-size: 12px; line-height: 1.5;
+  font-family: "JetBrains Mono", monospace; white-space: pre-wrap; word-break: break-all;
+}
+.code-preview-truncated {
+  padding: 6px 10px; font-size: 11px; color: var(--text-muted);
+  border-top: 1px solid var(--border-subtle); background: var(--bg-toolbar);
+}
+
+/* Archive / binary preview */
+.archive-preview {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 24px; color: var(--text-secondary); font-size: 13px;
+}
+.archive-preview .text-muted { color: var(--text-muted); font-size: 12px; }
+
+/* Font preview */
+.font-preview { padding: 12px; }
+
+/* SVG preview */
+.svg-preview { display: flex; justify-content: center; padding: 8px; }
+.svg-preview svg { max-width: 100%; max-height: 600px; }
 
 /* --- Settings overlay --- */
 .settings-overlay {

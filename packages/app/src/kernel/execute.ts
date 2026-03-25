@@ -14,14 +14,83 @@ const transpiler = new Transpiler({
  * Bun's dead-code elimination from stripping expression statements.
  */
 function transpileTS(code: string): string {
+  // Find the last expression (possibly multi-line) and wrap it in a var
+  // assignment so Bun's DCE won't strip it.
+  const lines = code.split("\n");
+  let lastNonEmptyIdx = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const t = lines[i]!.trim();
+    if (!t || t.startsWith("//") || t.startsWith("/*")) continue;
+    lastNonEmptyIdx = i;
+    break;
+  }
+
+  let startIdx = -1;
+  if (lastNonEmptyIdx >= 0) {
+    const lastTrimmed = lines[lastNonEmptyIdx]!.trim();
+    const isStatement = /^(const |let |var |if |for |while |do |class |function |return |throw |try |switch |import |export |\/\/)/.test(lastTrimmed);
+
+    if (!isStatement) {
+      // Check if last line is only closing brackets — walk back to find expression start
+      if (/^[)\]};,\s]+$/.test(lastTrimmed)) {
+        let depth = 0;
+        for (let i = lastNonEmptyIdx; i >= 0; i--) {
+          const ln = lines[i]!.trim();
+          for (let c = ln.length - 1; c >= 0; c--) {
+            const ch = ln[c];
+            if (ch === ")" || ch === "]" || ch === "}") depth++;
+            else if (ch === "(" || ch === "[" || ch === "{") depth--;
+          }
+          if (depth <= 0) {
+            // Check this line isn't a statement
+            const t = lines[i]!.trim();
+            if (!/^(const |let |var |if |for |while |do |class |function |return |throw |try |switch |import |export )/.test(t)) {
+              startIdx = i;
+            }
+            break;
+          }
+        }
+      } else {
+        // Single-line expression
+        startIdx = lastNonEmptyIdx;
+      }
+    }
+  }
+
+  let codeToTranspile = code;
+  let wrappedRange = false;
+  if (startIdx >= 0) {
+    // Strip leading semicolons from the start line (e.g. `;({...})`)
+    const startLine = lines[startIdx]!;
+    const stripped = startLine.replace(/^(\s*);+\s*/, "$1");
+    lines[startIdx] = stripped.replace(/^(\s*)/, "$1var __yb_last__ = ");
+    wrappedRange = true;
+    codeToTranspile = lines.join("\n");
+  }
+
   // Wrap in async function to prevent DCE of expression statements
-  const wrapped = `async function __yb_cell__() {\n${code}\n}`;
+  const wrapped = `async function __yb_cell__() {\n${codeToTranspile}\n}`;
   const result = transpiler.transformSync(wrapped);
   // Extract function body (between first { and last })
   const start = result.indexOf("{") + 1;
   const end = result.lastIndexOf("}");
   if (start <= 0 || end <= start) return code;
   let body = result.slice(start, end).trim();
+
+  // Restore the last expression: strip `var __yb_last__ = ` prefix
+  // Only wrap in parens if expression starts with { (otherwise acorn parses as block)
+  if (wrappedRange) {
+    const marker = "var __yb_last__ = ";
+    const idx = body.indexOf(marker);
+    if (idx >= 0) {
+      const before = body.slice(0, idx);
+      let expr = body.slice(idx + marker.length).replace(/;\s*$/, "");
+      if (expr.trimStart().startsWith("{")) {
+        expr = "(" + expr + ")";
+      }
+      body = before + expr;
+    }
+  }
   // Bun's transpiler merges consecutive const/let/var declarations into one statement.
   // e.g. `const {a} = expr, b = y;` — split these back so transformCellCode can hoist each.
   // Only split when comma is followed by an identifier (new declaration), not inside expressions.

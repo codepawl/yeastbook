@@ -38,10 +38,10 @@ export class YbkKernel {
   private staleCheckInterval: ReturnType<typeof setInterval> | null = null;
   private lastPong: number = 0;
 
-  // Pending executions: cellId → { execution, resolve }
+  // Pending executions: cellId → { execution, resolve(success) }
   private pending = new Map<string, {
     execution: vscode.NotebookCellExecution;
-    resolve: () => void;
+    resolve: (success: boolean) => void;
   }>();
 
   constructor(private context: vscode.ExtensionContext) {
@@ -268,7 +268,7 @@ export class YbkKernel {
     // Reject any pending executions
     for (const [, pending] of this.pending) {
       pending.execution.end(false, Date.now());
-      pending.resolve();
+      pending.resolve(false);
     }
     this.pending.clear();
   }
@@ -322,7 +322,7 @@ export class YbkKernel {
             vscode.NotebookCellOutputItem.error(new Error("Connection lost")),
           ]));
           pending.execution.end(false, Date.now());
-          pending.resolve();
+          pending.resolve(false);
           this.pending.delete(cellId);
         }
 
@@ -421,7 +421,7 @@ export class YbkKernel {
         ]));
         // Error ends execution
         execution.end(false, Date.now());
-        pending.resolve();
+        pending.resolve(false);
         this.pending.delete(cellId);
         break;
       }
@@ -430,7 +430,7 @@ export class YbkKernel {
         if (msg.status === "idle") {
           this.setStatus("idle");
           execution.end(true, Date.now());
-          pending.resolve();
+          pending.resolve(true);
           this.pending.delete(cellId);
         } else {
           this.setStatus("busy");
@@ -497,7 +497,8 @@ export class YbkKernel {
     }
 
     for (const cell of cells) {
-      await this.executeCell(cell);
+      const success = await this.executeCell(cell);
+      if (!success) break;
     }
   }
 
@@ -509,12 +510,12 @@ export class YbkKernel {
         vscode.NotebookCellOutputItem.text("Execution interrupted.", "text/plain"),
       ]));
       pending.execution.end(false, Date.now());
-      pending.resolve();
+      pending.resolve(false);
       this.pending.delete(cellId);
     }
   }
 
-  private async executeCell(cell: vscode.NotebookCell): Promise<void> {
+  private async executeCell(cell: vscode.NotebookCell): Promise<boolean> {
     const execution = this.controller.createNotebookCellExecution(cell);
     execution.executionOrder = ++this.executionOrder;
     execution.start(Date.now());
@@ -536,10 +537,10 @@ export class YbkKernel {
           vscode.commands.executeCommand("yeastbook.restartKernel");
         }
       });
-      return;
+      return false;
     }
 
-    return new Promise<void>((resolve) => {
+    return new Promise<boolean>((resolve) => {
       this.pending.set(cellId, { execution, resolve });
 
       // Send execute message
@@ -559,16 +560,16 @@ export class YbkKernel {
           ]));
           execution.end(false, Date.now());
           this.pending.delete(cellId);
-          resolve();
+          resolve(false);
         }
       }, 300000);
 
       // Clean up timeout when execution completes
       this.pending.set(cellId, {
         execution,
-        resolve: () => {
+        resolve: (success: boolean) => {
           clearTimeout(timeout);
-          resolve();
+          resolve(success);
         },
       });
     });
