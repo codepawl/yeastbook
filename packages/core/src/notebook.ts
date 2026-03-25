@@ -38,6 +38,21 @@ export class Notebook {
       kernelspec: { name: "yeastbook", display_name: "Yeastbook (Bun)", language: "typescript" },
       language_info: { name: "typescript" },
     };
+
+    // Migrate legacy %%python cells to metadata-based language
+    for (const cell of this.cells) {
+      if (cell.cell_type === "code" && !cell.metadata?.language) {
+        const src = cell.source.join("\n").trimStart();
+        if (src.startsWith("%%python")) {
+          cell.metadata = { ...cell.metadata, language: "python" };
+          const lines = cell.source.join("\n").split("\n");
+          const idx = lines.findIndex((l) => l.trim() === "%%python");
+          if (idx !== -1) {
+            cell.source = [lines.slice(idx + 1).join("\n")];
+          }
+        }
+      }
+    }
   }
 
   static createEmpty(): Notebook {
@@ -108,6 +123,11 @@ export class Notebook {
     if (cell) cell.source = [source];
   }
 
+  updateCellMetadata(id: string, updates: Record<string, unknown>): void {
+    const cell = this.cells.find((c) => c.id === id);
+    if (cell) cell.metadata = { ...cell.metadata, ...updates };
+  }
+
   updateCellType(id: string, type: "code" | "markdown"): void {
     const cell = this.cells.find((c) => c.id === id);
     if (cell) {
@@ -168,14 +188,14 @@ export class Notebook {
     if (idx === -1) return;
     const target = direction === "up" ? idx - 1 : idx + 1;
     if (target < 0 || target >= this.cells.length) return;
-    [this.cells[idx], this.cells[target]] = [this.cells[target], this.cells[idx]];
+    [this.cells[idx], this.cells[target]] = [this.cells[target]!, this.cells[idx]!];
   }
 
   reorderCell(id: string, toIndex: number): void {
     const fromIndex = this.cells.findIndex((c) => c.id === id);
     if (fromIndex === -1 || toIndex < 0 || toIndex >= this.cells.length) return;
     const [cell] = this.cells.splice(fromIndex, 1);
-    this.cells.splice(toIndex, 0, cell);
+    this.cells.splice(toIndex, 0, cell!);
   }
 
   getCell(id: string): Cell | undefined {

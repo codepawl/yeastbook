@@ -33,7 +33,7 @@ describe("HTTP routes", () => {
   test("GET /api/notebook returns notebook JSON", async () => {
     const res = await fetch(`${baseUrl}/api/notebook`);
     expect(res.status).toBe(200);
-    const data = await res.json();
+    const data = await res.json() as any;
     expect(data.nbformat).toBe(4);
     expect(data.cells).toBeArray();
   });
@@ -45,7 +45,7 @@ describe("HTTP routes", () => {
       body: JSON.stringify({ type: "code", source: "1+1" }),
     });
     expect(res.status).toBe(200);
-    const data = await res.json();
+    const data = await res.json() as any;
     expect(data.id).toBeDefined();
   });
 
@@ -55,7 +55,7 @@ describe("HTTP routes", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "code", source: "delete me" }),
     });
-    const { id } = await addRes.json();
+    const { id } = await addRes.json() as any;
     const delRes = await fetch(`${baseUrl}/api/cells/${id}`, { method: "DELETE" });
     expect(delRes.status).toBe(200);
   });
@@ -66,7 +66,7 @@ describe("HTTP routes", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "code", source: "old" }),
     });
-    const { id } = await addRes.json();
+    const { id } = await addRes.json() as any;
     const patchRes = await fetch(`${baseUrl}/api/cells/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -74,7 +74,7 @@ describe("HTTP routes", () => {
     });
     expect(patchRes.status).toBe(200);
     const nbRes = await fetch(`${baseUrl}/api/notebook`);
-    const nb = await nbRes.json();
+    const nb = await nbRes.json() as any;
     const cell = nb.cells.find((c: any) => c.id === id);
     expect(cell.source).toEqual(["new"]);
   });
@@ -87,7 +87,7 @@ describe("WebSocket execution", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "code", source: "1+1" }),
     });
-    const { id: cellId } = await addRes.json();
+    const { id: cellId } = await addRes.json() as any;
     const messages: any[] = [];
     const ws = new WebSocket(wsUrl);
     await new Promise<void>((resolve) => {
@@ -115,7 +115,7 @@ describe("WebSocket execution", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "code", source: "" }),
     });
-    const { id: cellId } = await addRes.json();
+    const { id: cellId } = await addRes.json() as any;
     const messages: any[] = [];
     const ws = new WebSocket(wsUrl);
     await new Promise<void>((resolve) => {
@@ -140,7 +140,7 @@ describe("WebSocket execution", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "code", source: "" }),
     });
-    const { id: cellId } = await addRes.json();
+    const { id: cellId } = await addRes.json() as any;
     const messages: any[] = [];
     const ws = new WebSocket(wsUrl);
     await new Promise<void>((resolve) => {
@@ -166,13 +166,13 @@ describe("WebSocket execution", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "code", source: "" }),
     });
-    const { id: cellId1 } = await addRes1.json();
+    const { id: cellId1 } = await addRes1.json() as any;
     const addRes2 = await fetch(`${baseUrl}/api/cells`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "code", source: "" }),
     });
-    const { id: cellId2 } = await addRes2.json();
+    const { id: cellId2 } = await addRes2.json() as any;
     const ws = new WebSocket(wsUrl);
     // Execute first cell: define a variable
     await new Promise<void>((resolve) => {
@@ -209,7 +209,7 @@ describe("New API endpoints", () => {
   test("POST /api/new creates a new .ybk notebook", async () => {
     const res = await fetch(`${baseUrl}/api/new`, { method: "POST" });
     expect(res.status).toBe(200);
-    const data = await res.json();
+    const data = await res.json() as any;
     expect(data.fileName).toMatch(/\.ybk$/);
     expect(data.fileFormat).toBe("ybk");
     expect(data.cells).toBeArray();
@@ -226,7 +226,7 @@ describe("New API endpoints", () => {
     });
     const res = await fetch(`${baseUrl}/api/export/ipynb`, { method: "POST" });
     expect(res.status).toBe(200);
-    const data = await res.json();
+    const data = await res.json() as any;
     expect(data.fileName).toMatch(/\.ipynb$/);
     expect(data.path).toBeDefined();
     cleanupPaths.push(data.path);
@@ -235,7 +235,7 @@ describe("New API endpoints", () => {
   test("POST /api/export/ybk exports notebook", async () => {
     const res = await fetch(`${baseUrl}/api/export/ybk`, { method: "POST" });
     expect(res.status).toBe(200);
-    const data = await res.json();
+    const data = await res.json() as any;
     expect(data.fileName).toMatch(/\.ybk$/);
     expect(data.path).toBeDefined();
     cleanupPaths.push(data.path);
@@ -248,7 +248,7 @@ describe("New API endpoints", () => {
       body: JSON.stringify({ path: tmpPath }),
     });
     expect(res.status).toBe(200);
-    const data = await res.json();
+    const data = await res.json() as any;
     expect(data.fileName).toBeDefined();
     expect(data.fileFormat).toBe("ipynb");
     expect(data.cells).toBeArray();
@@ -261,7 +261,7 @@ describe("New API endpoints", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "code", source: "first" }),
     });
-    const { id: firstId } = await res1.json();
+    const { id: firstId } = await res1.json() as any;
 
     const res2 = await fetch(`${baseUrl}/api/cells`, {
       method: "POST",
@@ -276,12 +276,12 @@ describe("New API endpoints", () => {
       body: JSON.stringify({ type: "code", source: "second", afterId: firstId }),
     });
     expect(insertRes.status).toBe(200);
-    const { id: insertedId } = await insertRes.json();
+    const { id: insertedId } = await insertRes.json() as any;
     expect(insertedId).toBeDefined();
 
     // Verify order
     const nbRes = await fetch(`${baseUrl}/api/notebook`);
-    const nb = await nbRes.json();
+    const nb = await nbRes.json() as any;
     const firstIdx = nb.cells.findIndex((c: any) => c.id === firstId);
     const insertedIdx = nb.cells.findIndex((c: any) => c.id === insertedId);
     expect(insertedIdx).toBe(firstIdx + 1);

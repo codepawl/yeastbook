@@ -1,8 +1,8 @@
 import * as vscode from "vscode";
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
-import { createServer } from "node:net";
-import { statSync } from "node:fs";
-import { join } from "node:path";
+import { createServer, Socket } from "node:net";
+import { existsSync, statSync } from "node:fs";
+import { join, dirname } from "node:path";
 import WebSocket from "ws";
 
 interface WsIncoming {
@@ -34,6 +34,9 @@ export class YbkKernel {
   private output: vscode.OutputChannel;
   private retryCount = 0;
   private maxRetries = 5;
+  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+  private staleCheckInterval: ReturnType<typeof setInterval> | null = null;
+  private lastPong: number = 0;
 
   // Pending executions: cellId → { execution, resolve }
   private pending = new Map<string, {
@@ -49,7 +52,7 @@ export class YbkKernel {
       "yeastbook",
       "Bun Kernel",
     );
-    this.controller.supportedLanguages = ["typescript", "javascript"];
+    this.controller.supportedLanguages = ["typescript", "javascript", "python"];
     this.controller.supportsExecutionOrder = true;
     this.controller.executeHandler = this.executeHandler.bind(this);
     this.controller.interruptHandler = this.interruptHandler.bind(this);
@@ -82,6 +85,21 @@ export class YbkKernel {
     this.statusBar.show();
   }
 
+  showOutputChannel(): void {
+    this.output.show(true);
+  }
+
+  private async isPortInUse(port: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const socket = new Socket();
+      socket.setTimeout(500);
+      socket.on("connect", () => { socket.destroy(); resolve(true); });
+      socket.on("timeout", () => { socket.destroy(); resolve(false); });
+      socket.on("error", () => { resolve(false); });
+      socket.connect(port, "127.0.0.1");
+    });
+  }
+
   async startServer(notebookPath: string): Promise<void> {
     if (this.isRunning && this.notebookPath === notebookPath) return;
     await this.stopServer();
@@ -92,26 +110,65 @@ export class YbkKernel {
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: "Starting Bun Kernel...",
+        title: "Starting Bun Kernel",
         cancellable: false,
       },
-      async () => {
+      async (progress) => {
+        progress.report({ increment: 0, message: "Finding port..." });
         const config = vscode.workspace.getConfiguration("yeastbook");
         const configPort = config.get<number>("serverPort", 0);
         this.port = configPort || await this.findFreePort();
 
+        // Check if a server is already running on this port
+        if (await this.isPortInUse(this.port)) {
+          this.output.appendLine(`Server already running on port ${this.port}, connecting...`);
+          progress.report({ increment: 60, message: "Connecting to existing server..." });
+          await this.connectWebSocket();
+          progress.report({ increment: 40, message: "Connected" });
+          this.output.appendLine("Connected to existing server.");
+          this.setStatus("idle");
+          return;
+        }
+
+        progress.report({ increment: 20, message: "Resolving CLI..." });
         const bunPath = config.get<string>("bunPath", "bun");
         const cliPath = this.findYeastbook();
         if (!cliPath) {
           this.setStatus("error");
-          throw new Error("yeastbook CLI not found. Install: bun install -g yeastbook");
+          throw new Error(
+            "yeastbook CLI not found. Set \"yeastbook.cliPath\" in VS Code settings to the path of your cli.ts, " +
+            "or install globally: bun install -g yeastbook"
+          );
         }
 
+        // Detect venv for Python support
+        const notebookDir = dirname(notebookPath);
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        const workspaceRoot = workspaceFolders?.[0]?.uri.fsPath ?? notebookDir;
+        const isWindows = process.platform === "win32";
+        const binDir = isWindows ? "Scripts" : "bin";
+        const pyName = isWindows ? "python.exe" : "python3";
+        const venvCandidates = [
+          join(notebookDir, ".venv", binDir, pyName),
+          join(workspaceRoot, ".venv", binDir, pyName),
+          join(notebookDir, "venv", binDir, pyName),
+          join(workspaceRoot, "venv", binDir, pyName),
+        ];
+        const detectedPython = venvCandidates.find((p) => existsSync(p));
+        const spawnEnv = { ...process.env, ...(detectedPython ? { YBK_PYTHON_PATH: detectedPython } : {}) };
+        if (detectedPython) {
+          this.output.appendLine(`Detected Python venv: ${detectedPython}`);
+        }
+
+        progress.report({ increment: 10, message: "Spawning server..." });
         this.output.appendLine(`Starting server: ${bunPath} ${cliPath} ${notebookPath} --port ${this.port}`);
 
         this.process = spawn(bunPath, [cliPath, notebookPath, "--port", String(this.port), "--no-open"], {
           stdio: ["ignore", "pipe", "pipe"],
+          detached: true,
+          env: spawnEnv,
         });
+        this.process.unref();
 
         const startupTimeout = config.get<number>("kernelStartupTimeout", 15000);
 
@@ -143,7 +200,24 @@ export class YbkKernel {
           });
         });
 
+        // Persistent crash monitor (fires after startup is complete)
+        this.process!.on("exit", (code) => {
+          if (code !== 0 && code !== null) {
+            this.setStatus("error");
+            this.output.appendLine(`[crash] Server exited unexpectedly with code ${code}`);
+            vscode.window.showErrorMessage(
+              `Yeastbook server crashed (exit code ${code}).`,
+              "Restart Server", "Show Logs",
+            ).then((choice) => {
+              if (choice === "Restart Server") vscode.commands.executeCommand("yeastbook.restartKernel");
+              if (choice === "Show Logs") this.output.show(true);
+            });
+          }
+        });
+
+        progress.report({ increment: 30, message: "Connecting WebSocket..." });
         await this.connectWebSocket();
+        progress.report({ increment: 40, message: "Connected" });
         this.output.appendLine("Server started and WebSocket connected.");
         this.setStatus("idle");
       },
@@ -151,6 +225,18 @@ export class YbkKernel {
   }
 
   async stopServer(): Promise<void> {
+    // Clear heartbeat intervals
+    if (this.heartbeatInterval) { clearInterval(this.heartbeatInterval); this.heartbeatInterval = null; }
+    if (this.staleCheckInterval) { clearInterval(this.staleCheckInterval); this.staleCheckInterval = null; }
+
+    // Send shutdown message to gracefully stop Python daemon
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      try {
+        this.ws.send(JSON.stringify({ type: "shutdown" }));
+        await new Promise((r) => setTimeout(r, 1000));
+      } catch { /* ignore send errors during shutdown */ }
+    }
+
     this.ws?.close();
     this.ws = null;
 
@@ -198,7 +284,25 @@ export class YbkKernel {
       this.ws.on("open", () => {
         clearTimeout(timeout);
         this.retryCount = 0;
+        this.lastPong = Date.now();
         this.output.appendLine("WebSocket connected.");
+
+        // Start heartbeat
+        if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
+        this.heartbeatInterval = setInterval(() => {
+          if (this.ws?.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({ type: "ping", ts: Date.now() }));
+          }
+        }, 30000);
+
+        if (this.staleCheckInterval) clearInterval(this.staleCheckInterval);
+        this.staleCheckInterval = setInterval(() => {
+          if (this.lastPong && Date.now() - this.lastPong > 90000) {
+            this.output.appendLine("Heartbeat lost, reconnecting...");
+            this.ws?.close();
+          }
+        }, 30000);
+
         resolve();
       });
 
@@ -234,6 +338,14 @@ export class YbkKernel {
           } else {
             this.output.appendLine("Max reconnection attempts reached. Giving up.");
             this.setStatus("error");
+            vscode.window.showErrorMessage(
+              "Kernel connection lost and could not reconnect. Restart the kernel to continue.",
+              "Restart Kernel",
+            ).then((choice) => {
+              if (choice === "Restart Kernel") {
+                vscode.commands.executeCommand("yeastbook.restartKernel");
+              }
+            });
           }
         }
       });
@@ -247,6 +359,12 @@ export class YbkKernel {
   }
 
   private handleMessage(msg: WsIncoming): void {
+    // Handle heartbeat pong
+    if (msg.type === "pong") {
+      this.lastPong = Date.now();
+      return;
+    }
+
     const cellId = msg.cellId;
     if (!cellId) {
       // Non-cell messages (status updates, etc.)
@@ -365,9 +483,15 @@ export class YbkKernel {
       try {
         await this.startServer(notebook.uri.fsPath);
       } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
         vscode.window.showErrorMessage(
-          `Failed to start kernel: ${e instanceof Error ? e.message : e}`,
-        );
+          `Failed to start kernel: ${msg}`,
+          "Installation Guide",
+        ).then((choice) => {
+          if (choice === "Installation Guide") {
+            vscode.env.openExternal(vscode.Uri.parse("https://github.com/codepawl/yeastbook#install"));
+          }
+        });
         return;
       }
     }
@@ -404,6 +528,14 @@ export class YbkKernel {
         vscode.NotebookCellOutputItem.error(new Error("WebSocket not connected")),
       ]));
       execution.end(false, Date.now());
+      vscode.window.showErrorMessage(
+        "Kernel WebSocket is not connected. Try restarting the kernel.",
+        "Restart Kernel",
+      ).then((choice) => {
+        if (choice === "Restart Kernel") {
+          vscode.commands.executeCommand("yeastbook.restartKernel");
+        }
+      });
       return;
     }
 
@@ -449,11 +581,17 @@ export class YbkKernel {
   }
 
   private findYeastbook(): string | null {
-    // 1. Check global install
-    try {
-      const p = execFileSync("which", ["yeastbook"], { encoding: "utf-8" }).trim();
-      if (p) return p;
-    } catch { /* not found */ }
+    // 0. User-configured path takes priority
+    const config = vscode.workspace.getConfiguration("yeastbook");
+    const customPath = config.get<string>("cliPath", "");
+    if (customPath) {
+      try { if (statSync(customPath).isFile()) return customPath; } catch { /* skip */ }
+    }
+
+    // 1. Check relative to extension install path (monorepo sibling: ../app/src/cli.ts)
+    const extDir = this.context.extensionPath;
+    const monorepoCliFromExt = join(extDir, "..", "app", "src", "cli.ts");
+    try { if (statSync(monorepoCliFromExt).isFile()) return monorepoCliFromExt; } catch { /* skip */ }
 
     // 2. Check workspace node_modules
     for (const folder of vscode.workspace.workspaceFolders ?? []) {
@@ -461,11 +599,17 @@ export class YbkKernel {
       try { if (statSync(p).isFile()) return p; } catch { /* skip */ }
     }
 
-    // 3. Check monorepo CLI path
+    // 3. Check monorepo CLI path from workspace root
     for (const folder of vscode.workspace.workspaceFolders ?? []) {
       const p = join(folder.uri.fsPath, "packages", "app", "src", "cli.ts");
       try { if (statSync(p).isFile()) return p; } catch { /* skip */ }
     }
+
+    // 4. Check global install
+    try {
+      const p = execFileSync("which", ["yeastbook"], { encoding: "utf-8" }).trim();
+      if (p) return p;
+    } catch { /* not found */ }
 
     return null;
   }

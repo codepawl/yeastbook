@@ -1,17 +1,35 @@
 {
-  "name": "@yeastbook/ui",
-  "version": "0.0.1",
+  "name": "@codepawl/yeastbook-ui",
+  "version": "0.0.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": ["src/", "dist/", "package.json"],
+  "license": "MIT",
+  "description": "UI components for Yeastbook notebook",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nxank4/yeastbook",
+    "directory": "packages/ui"
+  },
   "dependencies": {
     "@atlaskit/pragmatic-drag-and-drop": "^1.7.9",
+    "@atlaskit/pragmatic-drag-and-drop-auto-scroll": "^2.0.0",
     "@atlaskit/pragmatic-drag-and-drop-hitbox": "^1.1.0",
+    "@codepawl/yeastbook-core": "workspace:*",
     "@monaco-editor/react": "^4.7.0",
-    "@yeastbook/core": "workspace:*",
     "bootstrap-icons": "^1.13.1",
     "chart.js": "^4.5.1",
     "dompurify": "^3.3.3",
+    "katex": "^0.16.40",
+    "lucide-react": "^1.0.1",
     "marked": "^17.0.5",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "react-window": "^2.2.7",
+    "vega": "^6.2.0",
+    "vega-embed": "^7.1.0",
+    "vega-lite": "^6.4.2"
   },
   "devDependencies": {
     "@types/dompurify": "^3.2.0",

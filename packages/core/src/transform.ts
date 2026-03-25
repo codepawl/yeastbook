@@ -4,12 +4,17 @@ const STATEMENT_PREFIXES = [
   "var ", "let ", "const ", "if ", "if(", "for ", "for(",
   "while ", "while(", "do ", "do{", "class ", "function ",
   "return ", "throw ", "try ", "try{", "switch ", "switch(",
-  "import ", "export ", "{", "}", "]", ")", "//", "/*",
+  "import ", "export ", "//", "/*",
 ];
 
 function isStatement(line: string): boolean {
   const trimmed = line.trimStart();
-  return STATEMENT_PREFIXES.some((p) => trimmed.startsWith(p));
+  if (STATEMENT_PREFIXES.some((p) => trimmed.startsWith(p))) return true;
+  // Bare block-closing: only `}` or `};` (no parens/brackets = not an expression)
+  // But `})`, `}))`, `}]);` etc. are expression continuations — not statements
+  const clean = trimmed.replace(/;$/, "").trim();
+  if (/^}+$/.test(clean)) return true;  // bare closing braces only
+  return false;
 }
 
 /**
@@ -72,11 +77,11 @@ function transformSingleImport(stmt: string): string {
 
   // Named only: import { a, b } from "..."
   const named = clause.match(/^\{([^}]+)\}$/);
-  if (named) return `const {${named[1].replace(/\n/g, " ")}} = await import("${mod}")`;
+  if (named) return `const {${named[1]!.replace(/\n/g, " ")}} = await import("${mod}")`;
 
   // Default + named: import def, { a, b } from "..."
   const defNamed = clause.match(/^(\w+)\s*,\s*\{([^}]+)\}$/);
-  if (defNamed) return `const { default: ${defNamed[1]}, ${defNamed[2].replace(/\n/g, " ").trim()} } = await import("${mod}")`;
+  if (defNamed) return `const { default: ${defNamed[1]}, ${defNamed[2]!.replace(/\n/g, " ").trim()} } = await import("${mod}")`;
 
   // Default + namespace: import def, * as ns from "..."
   const defNs = clause.match(/^(\w+)\s*,\s*\*\s+as\s+(\w+)$/);

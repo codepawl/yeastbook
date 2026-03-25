@@ -1,23 +1,34 @@
 {
   "name": "yeastbook-monorepo",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
+  "license": "MIT",
   "workspaces": ["packages/*"],
   "scripts": {
     "dev": "bun run dev:ui & bun run dev:server",
     "dev:server": "bun --watch packages/app/src/cli.ts new --dev",
-    "dev:ui": "mkdir -p packages/ui/dist && cp packages/ui/src/index.html packages/ui/dist/index.html && bun build packages/ui/src/index.tsx --outdir packages/ui/dist --bundle --watch",
-    "build:ui": "bun run --filter @yeastbook/ui build",
+    "dev:ui": "mkdir -p packages/ui/dist && cp packages/ui/src/index.html packages/ui/src/scrollbar.css packages/ui/src/favicon.png packages/ui/dist/ && bun build packages/ui/src/index.tsx --outdir packages/ui/dist --bundle --watch",
+    "build:ui": "bun run --filter @codepawl/yeastbook-ui build",
     "build:embed": "bun run scripts/embed-assets.ts",
-    "build:all": "bun run build:ui && bun run build:embed && bun run build:binary:linux",
+    "build:all": "bun run build:ui && bun run build:embed && bun run build:binaries",
+    "build:binaries": "bun run build:binary:linux && bun run build:binary:linux-arm64 && bun run build:binary:mac && bun run build:binary:mac-x64 && bun run build:binary:windows",
     "build:binary:linux": "bun build --compile --target=bun-linux-x64 packages/app/src/cli.ts --outfile binaries/yeastbook-linux",
-    "build:binary:mac": "bun build --compile --target=bun-macos-arm64 packages/app/src/cli.ts --outfile binaries/yeastbook-macos",
-    "test": "bun test"
+    "build:binary:linux-arm64": "bun build --compile --target=bun-linux-arm64 packages/app/src/cli.ts --outfile binaries/yeastbook-linux-arm64",
+    "build:binary:mac": "bun build --compile --target=bun-darwin-arm64 packages/app/src/cli.ts --outfile binaries/yeastbook-macos-arm",
+    "build:binary:mac-x64": "bun build --compile --target=bun-darwin-x64 packages/app/src/cli.ts --outfile binaries/yeastbook-macos-x64",
+    "build:binary:windows": "bun build --compile --target=bun-windows-x64 packages/app/src/cli.ts --outfile binaries/yeastbook-windows.exe",
+    "test": "bun test",
+    "prepublish": "bun run build:ui && bun run build:embed",
+    "publish:all": "bun run prepublish && cd packages/core && npm publish && cd ../ui && npm publish && cd ../app && npm publish",
+    "screenshots": "bun scripts/capture-screenshots.ts",
+    "bump": "bun scripts/bump-version.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",
     "@types/lodash": "^4.17.24",
-    "@types/node": "^25.5.0"
+    "@types/node": "^25.5.0",
+    "playwright": "^1.58.2",
+    "sharp": "^0.34.5"
   },
   "peerDependencies": {
     "typescript": "^5"

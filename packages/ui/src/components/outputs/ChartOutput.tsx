@@ -37,10 +37,10 @@ export function ChartOutput({ data, config }: Props) {
     if (data.length > 0 && typeof data[0] === "object" && data[0] !== null) {
       // Array of objects: use xKey and yKey
       const rows = data as Record<string, unknown>[];
-      const xKey = config.xKey || Object.keys(rows[0])[0];
-      const yKey = config.yKey || Object.keys(rows[0])[1];
-      labels = rows.map((r) => String(r[xKey] ?? ""));
-      values = rows.map((r) => Number(r[yKey] ?? 0));
+      const xKey = config.xKey || Object.keys(rows[0]!)[0];
+      const yKey = config.yKey || Object.keys(rows[0]!)[1];
+      labels = rows.map((r) => String(r[xKey!] ?? ""));
+      values = rows.map((r) => Number(r[yKey!] ?? 0));
     } else {
       // Simple array of values
       labels = data.map((_, i) => String(i));

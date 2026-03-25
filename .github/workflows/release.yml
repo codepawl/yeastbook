@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: write
+  attestations: write
+  id-token: write
 
 jobs:
   test:
@@ -19,6 +21,24 @@ jobs:
           bun-version: latest
 
       - run: bun install --frozen-lockfile
+
+      - uses: actions/cache/save@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+            ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+
+      - name: Verify version consistency
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          PKG_VERSION=$(bun -e "console.log(require('./packages/app/package.json').version)")
+          if [ "$TAG" != "$PKG_VERSION" ]; then
+            echo "::error::Tag version (v$TAG) does not match package.json version ($PKG_VERSION)"
+            exit 1
+          fi
+          echo "Version consistent: $TAG"
 
       - name: Type check
         run: bunx tsc --noEmit
@@ -36,7 +56,13 @@ jobs:
         with:
           bun-version: latest
 
-      - run: bun install --frozen-lockfile
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+            ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
 
       - name: Build UI and embed assets
         run: bun run build:ui && bun run build:embed
@@ -104,6 +130,14 @@ jobs:
         with:
           bun-version: latest
 
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+            ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+
       - name: Build and package VS Code extension
         run: cd packages/vscode && bun install && bun run build && bun run package
 
@@ -164,3 +198,13 @@ jobs:
             binaries/yeastbook-windows.exe
             binaries/checksums.txt
             vsix/*.vsix
+
+      - name: Attest build provenance for binaries
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            binaries/yeastbook-linux
+            binaries/yeastbook-linux-arm64
+            binaries/yeastbook-macos-arm
+            binaries/yeastbook-macos-x64
+            binaries/yeastbook-windows.exe

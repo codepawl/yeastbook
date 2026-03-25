@@ -47,7 +47,7 @@ export class ExecutionQueue {
     // Dedup: if same cellId already queued, cancel previous entry
     const existingIdx = this.queue.findIndex((e) => e.cellId === cellId);
     if (existingIdx !== -1) {
-      const existing = this.queue[existingIdx];
+      const existing = this.queue[existingIdx]!;
       existing.cancelToken.cancelled = true;
       existing.resolve(); // resolve silently
       this.queue.splice(existingIdx, 1);
@@ -128,7 +128,7 @@ export class ExecutionQueue {
     // Check if it's in the queue
     const idx = this.queue.findIndex((e) => e.cellId === cellId);
     if (idx !== -1) {
-      const entry = this.queue[idx];
+      const entry = this.queue[idx]!;
       entry.cancelToken.cancelled = true;
       entry.resolve();
       this.queue.splice(idx, 1);

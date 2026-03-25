@@ -1,10 +1,22 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { draggable, dropTargetForElements, monitorForElements } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
+
+function LiveTimer({ startTime }: { startTime: number }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 100);
+    return () => clearInterval(id);
+  }, []);
+  const ms = now - startTime;
+  const label = ms < 1000 ? `${ms}ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)}s` : `${(ms / 60000).toFixed(1)}m`;
+  return <span className="cell-exec-time cell-exec-time-live">{label}</span>;
+}
 import { setCustomNativeDragPreview } from "@atlaskit/pragmatic-drag-and-drop/element/set-custom-native-drag-preview";
 import { attachClosestEdge, extractClosestEdge, type Edge } from "@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge";
+import { autoScrollForElements } from "@atlaskit/pragmatic-drag-and-drop-auto-scroll/element";
 import { CodeCell } from "./CodeCell.tsx";
 import { MarkdownCell } from "./MarkdownCell.tsx";
-import type { Cell, CellOutput, Settings } from "@yeastbook/core";
+import type { Cell, CellOutput, Settings } from "@codepawl/yeastbook-core";
 import type { Mode } from "../hooks/useKeyboardShortcuts.ts";
 
 interface Props {
@@ -29,6 +41,7 @@ interface Props {
   onRunAllBelow: (cellId: string) => void;
   onInterrupt: () => void;
   onChangeCellType: (type: "code" | "markdown", cellId: string) => void;
+  onChangeLanguage?: (cellId: string, language: string) => void;
   onInsertCellAt: (type: "code" | "markdown", position: "above" | "below", targetCellId: string) => void;
   onCutCell: (cellId: string) => void;
   onCopyCell: (cellId: string) => void;
@@ -39,6 +52,10 @@ interface Props {
   onReorderCell: (cellId: string, toIndex: number) => void;
   onSave: () => void;
   onOpenPalette: () => void;
+  onEditorMount?: (cellId: string, editor: any, monaco: any) => void;
+  onSelectAcrossCells?: (searchText: string) => void;
+  onBlurSave?: (cellId: string) => void;
+  execTiming?: Map<string, { startTime: number; endTime?: number; duration?: number }>;
 }
 
 function DraggableCell({ cellId, index, children, isPresenting }: {
@@ -106,10 +123,22 @@ export function NotebookView({
   cells, busyCells, liveOutputs, settings, installStates,
   mode, focusedCellId, isPresenting, onModeChange,
   onRunCell, onRunAndAdvance, onSourceChange, onDeleteCell, onClearOutput, onUpdateMarkdown, onAddCell, onMoveCell,
-  onRunAllAbove, onRunAllBelow, onInterrupt, onChangeCellType,
+  onRunAllAbove, onRunAllBelow, onInterrupt, onChangeCellType, onChangeLanguage,
   onInsertCellAt, onCutCell, onCopyCell, onPasteCellBelow, hasClipboard, onRunAll, onHistoryPush, onReorderCell,
-  onSave, onOpenPalette,
+  onSave, onOpenPalette, onEditorMount, onSelectAcrossCells, onBlurSave, execTiming,
 }: Props) {
+  const notebookRef = useRef<HTMLDivElement>(null);
+  const [foldedCells, setFoldedCells] = useState<Set<string>>(new Set());
+
+  const toggleFold = useCallback((cellId: string) => {
+    setFoldedCells((prev) => {
+      const next = new Set(prev);
+      if (next.has(cellId)) next.delete(cellId);
+      else next.add(cellId);
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     return monitorForElements({
       onDrop({ source, location }) {
@@ -134,15 +163,40 @@ export function NotebookView({
     });
   }, [cells, onReorderCell]);
 
+  // Auto-scroll when dragging near edges of the notebook container
+  useEffect(() => {
+    const el = notebookRef.current;
+    if (!el || isPresenting) return;
+
+    return autoScrollForElements({
+      element: el,
+      getConfiguration: () => ({
+        maxScrollSpeed: "fast",
+      }),
+    });
+  }, [isPresenting]);
+
   return (
-    <div className={`notebook ${isPresenting ? "presentation-mode" : ""}`}>
+    <div ref={notebookRef} className={`notebook ${isPresenting ? "presentation-mode" : ""}`}>
       {cells.map((cell, idx) => (
-        <div key={cell.id} className="cell-wrapper" data-type={cell.cell_type}>
+        <div key={cell.id} className={`cell-wrapper ${foldedCells.has(cell.id) ? "cell-folded" : ""}`} data-type={cell.cell_type}>
           {cell.cell_type === "code" && (
-            <span className="cell-exec-count">
-              {busyCells.has(cell.id) && <span className="busy-indicator" />}
-              {cell.execution_count ? `[${cell.execution_count}]` : "[ ]"}
-            </span>
+            <>
+              <span className={`cell-exec-count ${busyCells.has(cell.id) ? "cell-exec-busy" : ""}`}>
+                {busyCells.has(cell.id) ? "[*]" : cell.execution_count ? `[${cell.execution_count}]` : "[ ]"}
+              </span>
+              {(() => {
+                const timing = execTiming?.get(cell.id);
+                const isBusy = busyCells.has(cell.id);
+                if (isBusy && timing?.startTime) {
+                  return <LiveTimer startTime={timing.startTime} />;
+                }
+                if (!timing?.duration) return null;
+                const ms = timing.duration;
+                const label = ms < 1000 ? `${ms}ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)}s` : `${(ms / 60000).toFixed(1)}m`;
+                return <span className="cell-exec-time" title={`Finished ${new Date(timing.endTime!).toLocaleTimeString()}`}>{label}</span>;
+              })()}
+            </>
           )}
           <DraggableCell cellId={cell.id} index={idx} isPresenting={isPresenting}>
           {(dragHandleRef) =>
@@ -159,6 +213,7 @@ export function NotebookView({
                   installing={installStates.get(cell.id)}
                   isCommandFocused={mode === "command" && focusedCellId === cell.id}
                   isPresenting={isPresenting}
+                  performanceMode={settings.execution?.performanceMode}
                   dragHandleRef={dragHandleRef}
                   onModeChange={isPresenting ? () => {} : onModeChange}
                   onRun={isPresenting ? () => {} : onRunCell}
@@ -172,6 +227,7 @@ export function NotebookView({
                   onRunAllBelow={isPresenting ? () => {} : () => onRunAllBelow(cell.id)}
                   onInterrupt={isPresenting ? () => {} : onInterrupt}
                   onChangeType={isPresenting ? () => {} : () => onChangeCellType("markdown", cell.id)}
+                  onChangeLanguage={isPresenting ? undefined : onChangeLanguage}
                   onHistoryPush={onHistoryPush}
                   onRunAll={isPresenting ? () => {} : onRunAll}
                   onSave={onSave}
@@ -182,11 +238,17 @@ export function NotebookView({
                   hasClipboard={hasClipboard}
                   onInsertAbove={isPresenting ? () => {} : (type) => onInsertCellAt(type, "above", cell.id)}
                   onInsertBelow={isPresenting ? () => {} : (type) => onInsertCellAt(type, "below", cell.id)}
+                  onEditorMount={onEditorMount}
+                  onSelectAcrossCells={onSelectAcrossCells}
+                  onBlurSave={onBlurSave}
+                  isFolded={foldedCells.has(cell.id)}
+                  onToggleFold={toggleFold}
                 />
               ) : (
                 <MarkdownCell
                   cell={cell}
                   isPresenting={isPresenting}
+                  isCommandFocused={mode === "command" && focusedCellId === cell.id}
                   dragHandleRef={dragHandleRef}
                   onUpdate={isPresenting ? () => {} : onUpdateMarkdown}
                   onDelete={isPresenting ? () => {} : onDeleteCell}

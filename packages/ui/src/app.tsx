@@ -5,18 +5,18 @@ import { SettingsPanel } from "./components/SettingsPanel.tsx";
 import { MenuBar, ShortcutsModal, AboutModal } from "./components/MenuBar.tsx";
 import { StatusBar } from "./components/StatusBar.tsx";
 import { CommandPalette } from "./components/CommandPalette.tsx";
-import { EnvExplorer } from "./components/EnvExplorer.tsx";
-import { DependenciesPanel } from "./components/DependenciesPanel.tsx";
-import { VariableExplorer } from "./components/VariableExplorer.tsx";
-import { FileExplorer } from "./components/FileExplorer.tsx";
+import { LeftSidebar } from "./components/LeftSidebar.tsx";
 import { PerfHUD } from "./components/PerfHUD.tsx";
+import { FindReplace } from "./components/FindReplace.tsx";
+import { PythonBootstrapModal, type BootstrapPhase } from "./components/PythonBootstrapModal.tsx";
+import { WelcomeScreen } from "./components/WelcomeScreen.tsx";
 import { useWebSocket } from "./useWebSocket.ts";
 import { useKeyboardShortcuts, type Mode } from "./hooks/useKeyboardShortcuts.ts";
 import { useHistory } from "./hooks/useHistory.ts";
 import { useDebugMode } from "./hooks/useDebugMode.ts";
 import { usePerfMetrics } from "./hooks/usePerfMetrics.ts";
-import type { Cell, CellOutput, WsIncoming, Settings } from "@yeastbook/core";
-import { DEFAULT_SETTINGS } from "@yeastbook/core";
+import type { Cell, CellOutput, WsIncoming, Settings, VariableDetails } from "@codepawl/yeastbook-core";
+import { DEFAULT_SETTINGS } from "@codepawl/yeastbook-core";
 
 function getInitialTheme(): "light" | "dark" {
   const stored = localStorage.getItem("yeastbook-theme");
@@ -26,18 +26,24 @@ function getInitialTheme(): "light" | "dark" {
 
 export function App() {
   const [cells, setCells] = useState<Cell[]>([]);
+  const [notebookLoading, setNotebookLoading] = useState(true);
   const [busyCells, setBusyCells] = useState<Set<string>>(new Set());
   const [liveOutputs, setLiveOutputs] = useState<Map<string, CellOutput[]>>(new Map());
   const [fileName, setFileName] = useState("notebook.ipynb");
   const [saved, setSaved] = useState(true);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [theme, setTheme] = useState<"light" | "dark">(getInitialTheme);
-  const [settings, setSettings] = useState<Settings>({ ...DEFAULT_SETTINGS, appearance: { theme: getInitialTheme() } });
+  const [settings, setSettings] = useState<Settings>({ ...DEFAULT_SETTINGS, appearance: { ...DEFAULT_SETTINGS.appearance, theme: getInitialTheme() } });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [version, setVersion] = useState("");
   const [bunVersion, setBunVersion] = useState("");
   const [fileFormat, setFileFormat] = useState<"ybk" | "ipynb">("ybk");
+  const [filePath, setFilePath] = useState<string | null>(null);
+  const [notebookDir, setNotebookDir] = useState("");
   const [dependencies, setDependencies] = useState<Record<string, string>>({});
   const [variables, setVariables] = useState<Record<string, { value: unknown; type: string; serializable: boolean }>>({});
+  const [inspectionResults, setInspectionResults] = useState<Map<string, VariableDetails>>(new Map());
+  const [execTiming, setExecTiming] = useState<Map<string, { startTime: number; endTime?: number; duration?: number }>>(new Map());
   const [runningAll, setRunningAll] = useState(false);
   const [focusedCellId, setFocusedCellId] = useState<string | null>(null);
   const [clipboardCell, setClipboardCell] = useState<Cell | null>(null);
@@ -45,24 +51,52 @@ export function App() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [findReplaceOpen, setFindReplaceOpen] = useState(false);
   const [installStates, setInstallStates] = useState<Map<string, { packages: string[]; logs: string[]; done: boolean; error?: string }>>(new Map());
   const [mode, setMode] = useState<Mode>("command");
   const [isPresenting, setIsPresenting] = useState(
     new URLSearchParams(window.location.search).get("mode") === "present"
   );
-  const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
+  const toggleSidebar = useCallback(() => {
+    window.dispatchEvent(new CustomEvent("yeastbook-toggle-sidebar"));
+  }, []);
   const [fileTreeVersion, setFileTreeVersion] = useState(0);
+  const [pythonPath, setPythonPath] = useState<string | null>(null);
+  const [hasVenv, setHasVenv] = useState<boolean>(false);
+  const [pythonPickerOpen, setPythonPickerOpen] = useState(false);
+  const [bootstrapOpen, setBootstrapOpen] = useState(false);
+  const [bootstrapPhase, setBootstrapPhase] = useState<BootstrapPhase>("choose");
+  const [bootstrapLogs, setBootstrapLogs] = useState<string[]>([]);
+  const [bootstrapRequirements, setBootstrapRequirements] = useState<string[] | null>(null);
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [bootstrapPythonPath, setBootstrapPythonPath] = useState<string | null>(null);
+  const [notebookDeleted, setNotebookDeleted] = useState(false);
   const runAllResolveRef = useRef<((hadError: boolean) => void) | null>(null);
   const runAllCellErrorRef = useRef(false);
   const runAllAbortedRef = useRef(false);
+  const editorRefsMap = useRef<Map<string, { editor: any; monaco: any }>>(new Map());
 
   useEffect(() => {
     document.title = `${saved ? "" : "● "}${fileName} — Yeastbook`;
   }, [fileName, saved]);
 
-  const showToast = useCallback((msg: string) => {
+  // Warn before closing tab with unsaved changes
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (!saved) { e.preventDefault(); }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [saved]);
+
+  const [toastAction, setToastAction] = useState<{ label: string; action: () => void } | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  const showToast = useCallback((msg: string, action?: { label: string; action: () => void }) => {
     setToast(msg);
-    setTimeout(() => setToast(null), 1500);
+    setToastAction(action ?? null);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => { setToast(null); setToastAction(null); }, action ? 5000 : 1500);
   }, []);
 
   const cellsRef = useRef(cells);
@@ -86,7 +120,15 @@ export function App() {
         setTheme(data.appearance.theme);
         if (data.version) setVersion(data.version);
         if (data.bunVersion) setBunVersion(data.bunVersion);
+        if (data.notebookDir) setNotebookDir(data.notebookDir);
       });
+    fetch("/api/env/info")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.pythonPath) setPythonPath(data.pythonPath);
+        setHasVenv(data.hasVenv ?? false);
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -98,7 +140,7 @@ export function App() {
     setTheme((t) => {
       const next = t === "light" ? "dark" : "light";
       setSettings((s) => {
-        const updated = { ...s, appearance: { theme: next } };
+        const updated = { ...s, appearance: { ...s.appearance, theme: next as "light" | "dark" } };
         fetch("/api/settings", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -127,6 +169,13 @@ export function App() {
     root.style.setProperty("--editor-word-wrap", settings.editor.wordWrap ? "pre-wrap" : "pre");
   }, [settings.editor]);
 
+  // Performance mode: set data attribute for CSS + localStorage
+  const performanceMode = settings.execution?.performanceMode ?? false;
+  useEffect(() => {
+    document.documentElement.setAttribute("data-perf-mode", String(performanceMode));
+    localStorage.setItem("yeastbook-perf-mode", String(performanceMode));
+  }, [performanceMode]);
+
   useEffect(() => {
     const root = document.documentElement;
     const mode = settings.layout?.maxWidth ?? "medium";
@@ -150,6 +199,7 @@ export function App() {
   }, [settings.layout?.maxWidth, settings.layout?.customWidth]);
 
   // --- WebSocket ---
+  const lastVarUpdateRef = useRef(0);
   const perfRef = useRef<{ recordPong: (ts: number) => void; recordExecStart: (id: string) => void; recordExecEnd: (id: string) => void }>({ recordPong: () => {}, recordExecStart: () => {}, recordExecEnd: () => {} });
   const handleWsMessage = useCallback((msg: WsIncoming) => {
     switch (msg.type) {
@@ -163,7 +213,23 @@ export function App() {
           else next.delete(msg.cellId);
           return next;
         });
+        if (msg.status === "busy") {
+          setExecTiming((prev) => {
+            const next = new Map(prev);
+            next.set(msg.cellId, { startTime: Date.now() });
+            return next;
+          });
+        }
         if (msg.status === "idle") {
+          setExecTiming((prev) => {
+            const next = new Map(prev);
+            const entry = next.get(msg.cellId);
+            if (entry) {
+              const endTime = Date.now();
+              next.set(msg.cellId, { ...entry, endTime, duration: endTime - entry.startTime });
+            }
+            return next;
+          });
           perfRef.current.recordExecEnd(msg.cellId);
           setSaved(true);
           if (runAllResolveRef.current) {
@@ -304,9 +370,18 @@ export function App() {
           if (data.fileFormat) setFileFormat(data.fileFormat);
         });
         break;
+      case "notebook_deleted":
+        setNotebookDeleted(true);
+        break;
       case "auto_saved":
         setSaved(true);
         showToast("Auto-saved");
+        break;
+      case "interrupt_ack":
+        showToast("Execution interrupted");
+        // Immediately clear all busy cells — don't wait for idle messages
+        setBusyCells(new Set());
+        setLiveOutputs(new Map());
         break;
       case "files_changed":
         setFileTreeVersion((v) => v + 1);
@@ -318,8 +393,60 @@ export function App() {
         setVariables(msg.variables);
         showToast(`↩ Session restored — ${msg.restoredCount} variables recovered`);
         break;
-      case "variables_updated":
+      case "variables_updated": {
+        // In performance mode, debounce variable updates
+        const now = Date.now();
+        if (performanceMode && now - lastVarUpdateRef.current < 5000) break;
+        lastVarUpdateRef.current = now;
         setVariables(msg.variables);
+        setInspectionResults(new Map());
+        break;
+      }
+      case "variable_details":
+        setInspectionResults((prev) => new Map(prev).set(msg.name, msg.details));
+        break;
+      case "python_status":
+        if (msg.status === "available" && msg.pythonPath) {
+          setPythonPath(msg.pythonPath);
+        } else if (msg.status === "unavailable") {
+          setPythonPath(null);
+        }
+        break;
+      case "python_env_missing":
+        setBootstrapOpen(true);
+        setBootstrapPhase("choose");
+        setBootstrapLogs([]);
+        setBootstrapError(null);
+        setBootstrapRequirements(null);
+        setBootstrapPythonPath(null);
+        break;
+      case "bootstrap_log":
+        setBootstrapLogs((prev) => [...prev, msg.text]);
+        break;
+      case "bootstrap_done":
+        if (msg.success) {
+          if (msg.pythonPath) {
+            setBootstrapPythonPath(msg.pythonPath);
+            setPythonPath(msg.pythonPath);
+            setHasVenv(true);
+          }
+          if (msg.step === "pip") {
+            setBootstrapPhase("done");
+          } else if (msg.step === "venv") {
+            // Will transition to "dependencies" if bootstrap_requirements_found follows,
+            // otherwise stay at "done" (handled below after a brief delay)
+            setTimeout(() => {
+              setBootstrapPhase((p) => p === "creating" ? "done" : p);
+            }, 500);
+          }
+        } else {
+          setBootstrapError(msg.error ?? "Unknown error");
+          setBootstrapPhase("choose");
+        }
+        break;
+      case "bootstrap_requirements_found":
+        setBootstrapRequirements(msg.packages);
+        setBootstrapPhase("dependencies");
         break;
     }
   }, [showToast]);
@@ -336,9 +463,12 @@ export function App() {
     setCells(data.cells || []);
     if (data.fileName) setFileName(data.fileName);
     if (data.fileFormat) setFileFormat(data.fileFormat);
+    setFilePath(data.filePath ?? null);
+    setNotebookLoading(false);
   }, []);
 
   useEffect(() => {
+    setNotebookLoading(true);
     fetch("/api/notebook").then((res) => res.json()).then(loadNotebookData);
     fetch("/api/dependencies").then((r) => r.json()).then((d) => setDependencies(d.dependencies || {})).catch(() => {});
     fetch("/api/variables").then((r) => r.json()).then((d) => setVariables(d.variables || {})).catch(() => {});
@@ -358,10 +488,61 @@ export function App() {
       });
       setSaved(false);
       perfRef.current.recordExecStart(cellId);
-      send({ type: "execute", cellId, code });
+      // Send cell language from metadata so server can route to correct kernel
+      const cell = cellsRef.current.find((c) => c.id === cellId);
+      const language = cell?.metadata?.language as string | undefined;
+      send({ type: "execute", cellId, code, ...(language ? { language } : {}) });
     },
     [send]
   );
+
+  const handleCreateVenv = useCallback(() => {
+    setBootstrapOpen(true);
+    setBootstrapPhase("choose");
+    setBootstrapLogs([]);
+    setBootstrapError(null);
+    setBootstrapRequirements(null);
+    setBootstrapPythonPath(null);
+  }, []);
+
+  const handleBootstrapAction = useCallback((
+    action: "create-venv" | "use-system" | "select-custom",
+    opts?: { customPath?: string; installRequirements?: boolean; lewmPreset?: boolean }
+  ) => {
+    setBootstrapLogs([]);
+    setBootstrapError(null);
+    setBootstrapPhase(action === "use-system" ? "creating" : "creating");
+    send({ type: "bootstrap", action, ...opts });
+  }, [send]);
+
+  const handleBootstrapInstallDeps = useCallback((opts: { installRequirements: boolean; lewmPreset: boolean }) => {
+    setBootstrapLogs([]);
+    setBootstrapPhase("installing");
+    send({ type: "bootstrap", action: "create-venv", installRequirements: opts.installRequirements, lewmPreset: opts.lewmPreset });
+  }, [send]);
+
+  const handleEditorMount = useCallback((cellId: string, editor: any, monaco: any) => {
+    editorRefsMap.current.set(cellId, { editor, monaco });
+    // Clean up on dispose
+    editor.onDidDispose(() => {
+      editorRefsMap.current.delete(cellId);
+    });
+  }, []);
+
+  const handleSelectAcrossCells = useCallback((searchText: string) => {
+    for (const [, { editor, monaco }] of editorRefsMap.current) {
+      const model = editor.getModel();
+      if (!model) continue;
+      const matches = model.findMatches(searchText, true, false, true, null, true);
+      if (matches.length > 0) {
+        const selections = matches.map((m: any) => new monaco.Selection(
+          m.range.startLineNumber, m.range.startColumn,
+          m.range.endLineNumber, m.range.endColumn,
+        ));
+        editor.setSelections(selections);
+      }
+    }
+  }, []);
 
   const focusCellEditor = useCallback((targetCellId: string) => {
     setFocusedCellId(targetCellId);
@@ -379,7 +560,7 @@ export function App() {
       const idx = cellsRef.current.findIndex((c) => c.id === cellId);
       if (idx >= 0 && idx < cellsRef.current.length - 1) {
         // Focus next existing cell
-        focusCellEditor(cellsRef.current[idx + 1].id);
+        focusCellEditor(cellsRef.current[idx + 1]!.id);
       } else if (idx === cellsRef.current.length - 1) {
         // Last cell — create a new one and focus it
         const res = await fetch("/api/cells/insert", {
@@ -405,7 +586,8 @@ export function App() {
     await fetch(`/api/cells/${cellId}`, { method: "DELETE" });
     setCells((prev) => prev.filter((c) => c.id !== cellId));
     setSaved(true);
-  }, [history]);
+    showToast("Cell deleted", { label: "Undo", action: () => history.undo() });
+  }, [history, showToast]);
 
   const handleClearOutput = useCallback((cellId: string) => {
     setCells((prev) =>
@@ -431,23 +613,54 @@ export function App() {
   }, []);
 
   const sourceChangeTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const pendingSources = useRef<Map<string, string>>(new Map());
+  const saveStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flushCellSave = useCallback(async (cellId: string) => {
+    const source = pendingSources.current.get(cellId);
+    if (source === undefined) return;
+    pendingSources.current.delete(cellId);
+    const timer = sourceChangeTimers.current.get(cellId);
+    if (timer) { clearTimeout(timer); sourceChangeTimers.current.delete(cellId); }
+    setSaveStatus("saving");
+    try {
+      await fetch(`/api/cells/${cellId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source }),
+      });
+      setSaved(true);
+      setSaveStatus("saved");
+      if (saveStatusTimer.current) clearTimeout(saveStatusTimer.current);
+      saveStatusTimer.current = setTimeout(() => setSaveStatus("idle"), 3000);
+    } catch {
+      setSaveStatus("error");
+    }
+  }, []);
+
+  const flushAllPendingSaves = useCallback(async () => {
+    const entries = Array.from(pendingSources.current.entries());
+    if (entries.length === 0) return;
+    for (const [cellId] of entries) {
+      await flushCellSave(cellId);
+    }
+  }, [flushCellSave]);
+
   const handleSourceChange = useCallback((cellId: string, source: string) => {
     setCells((prev) =>
       prev.map((c) => (c.id === cellId ? { ...c, source: [source] } : c))
     );
     setSaved(false);
-    // Debounce server save — 500ms after last keystroke
+    setSaveStatus("idle");
+    pendingSources.current.set(cellId, source);
+    // Debounce server save — 2000ms after last keystroke
     const existing = sourceChangeTimers.current.get(cellId);
     if (existing) clearTimeout(existing);
     sourceChangeTimers.current.set(cellId, setTimeout(() => {
       sourceChangeTimers.current.delete(cellId);
-      fetch(`/api/cells/${cellId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source }),
-      });
-    }, 500));
-  }, []);
+      flushCellSave(cellId);
+    }, 2000));
+  }, [flushCellSave]);
 
   const handleAddCell = useCallback(async (type: "code" | "markdown") => {
     const res = await fetch("/api/cells", {
@@ -478,7 +691,7 @@ export function App() {
       const t = direction === "up" ? i - 1 : i + 1;
       if (t < 0 || t >= prev.length) return prev;
       const next = [...prev];
-      [next[i], next[t]] = [next[t], next[i]];
+      [next[i], next[t]] = [next[t]!, next[i]!];
       return next;
     });
     setSaved(true);
@@ -491,7 +704,7 @@ export function App() {
     setCells((prev) => {
       const next = [...prev];
       const [moved] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, moved);
+      next.splice(toIndex, 0, moved!);
       return next;
     });
     await fetch(`/api/cells/${cellId}/reorder`, {
@@ -580,10 +793,19 @@ export function App() {
   }, [send]);
 
   const handleSave = useCallback(async () => {
-    await fetch("/api/save", { method: "POST" });
-    setSaved(true);
-    showToast("Saved");
-  }, [showToast]);
+    // Flush any pending debounced saves first
+    await flushAllPendingSaves();
+    setSaveStatus("saving");
+    try {
+      await fetch("/api/save", { method: "POST" });
+      setSaved(true);
+      setSaveStatus("saved");
+      if (saveStatusTimer.current) clearTimeout(saveStatusTimer.current);
+      saveStatusTimer.current = setTimeout(() => setSaveStatus("idle"), 3000);
+    } catch {
+      setSaveStatus("error");
+    }
+  }, [flushAllPendingSaves]);
 
   const handleInsertCellAt = useCallback(async (type: "code" | "markdown", position: "above" | "below", targetCellId: string) => {
     const targetIdx = cellsRef.current.findIndex((c) => c.id === targetCellId);
@@ -634,13 +856,17 @@ export function App() {
     if (cell) {
       setClipboardCell({ ...cell });
       handleDeleteCell(cellId);
+      showToast("Cell cut");
     }
-  }, [cells, handleDeleteCell]);
+  }, [cells, handleDeleteCell, showToast]);
 
   const handleCopyCellById = useCallback((cellId: string) => {
     const cell = cells.find((c) => c.id === cellId);
-    if (cell) setClipboardCell({ ...cell });
-  }, [cells]);
+    if (cell) {
+      setClipboardCell({ ...cell });
+      showToast("Cell copied");
+    }
+  }, [cells, showToast]);
 
   const handlePasteCellBelow = useCallback(async (afterCellId: string) => {
     if (!clipboardCell) return;
@@ -661,7 +887,8 @@ export function App() {
       return [...prev, newCell];
     });
     setSaved(false);
-  }, [clipboardCell]);
+    showToast("Cell pasted");
+  }, [clipboardCell, showToast]);
 
   // --- Keyboard shortcut handlers ---
   const handleAddCellAbove = useCallback(async () => {
@@ -710,7 +937,7 @@ export function App() {
   const handleFocusPrev = useCallback(() => {
     setCells((prev) => {
       const idx = prev.findIndex((c) => c.id === focusedCellId);
-      if (idx > 0) setFocusedCellId(prev[idx - 1].id);
+      if (idx > 0) setFocusedCellId(prev[idx - 1]!.id);
       return prev;
     });
   }, [focusedCellId]);
@@ -718,7 +945,7 @@ export function App() {
   const handleFocusNext = useCallback(() => {
     setCells((prev) => {
       const idx = prev.findIndex((c) => c.id === focusedCellId);
-      if (idx >= 0 && idx < prev.length - 1) setFocusedCellId(prev[idx + 1].id);
+      if (idx >= 0 && idx < prev.length - 1) setFocusedCellId(prev[idx + 1]!.id);
       return prev;
     });
   }, [focusedCellId]);
@@ -742,11 +969,31 @@ export function App() {
     });
   }, [focusedCellId, history]);
 
+  const handleChangeLanguage = useCallback(async (cellId: string, language: string) => {
+    setCells((prev) => prev.map((c) =>
+      c.id === cellId ? { ...c, metadata: { ...c.metadata, language } } : c
+    ));
+    await fetch(`/api/cells/${cellId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ metadata: { language } }),
+    });
+  }, []);
+
   const handleEnterEdit = useCallback(() => {
     setMode("edit");
     if (focusedCellId) {
-      const el = document.querySelector(`#cell-${focusedCellId} .monaco-editor`) as HTMLElement;
-      el?.querySelector("textarea")?.focus();
+      // Code cell: focus Monaco editor
+      const monaco = document.querySelector(`#cell-${focusedCellId} .monaco-editor`) as HTMLElement;
+      if (monaco) {
+        monaco.querySelector("textarea")?.focus();
+        return;
+      }
+      // Markdown cell: trigger double-click to enter edit mode
+      const rendered = document.querySelector(`#cell-${focusedCellId} .markdown-rendered`) as HTMLElement;
+      if (rendered) {
+        rendered.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+      }
     }
   }, [focusedCellId]);
 
@@ -796,6 +1043,13 @@ export function App() {
     showToast("New notebook created");
   }, [loadNotebookData, showToast]);
 
+  const handleCloseNotebook = useCallback(() => {
+    setCells([]);
+    setFileName("Untitled");
+    setFilePath(null);
+    setSaved(true);
+  }, []);
+
   const handleOpenFile = useCallback(async (path: string) => {
     const res = await fetch("/api/import", {
       method: "POST",
@@ -809,16 +1063,28 @@ export function App() {
   }, [loadNotebookData, showToast]);
 
   const handleExportIpynb = useCallback(async () => {
-    const res = await fetch("/api/export/ipynb", { method: "POST" });
+    const outputDir = prompt("Export .ipynb to folder:", notebookDir);
+    if (outputDir === null) return;
+    const res = await fetch("/api/export/ipynb", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ outputDir: outputDir || undefined }),
+    });
     const data = await res.json();
-    showToast(`Exported to ${data.fileName}`);
-  }, [showToast]);
+    showToast(`Exported to ${data.path}`);
+  }, [showToast, notebookDir]);
 
   const handleExportYbk = useCallback(async () => {
-    const res = await fetch("/api/export/ybk", { method: "POST" });
+    const outputDir = prompt("Export .ybk to folder:", notebookDir);
+    if (outputDir === null) return;
+    const res = await fetch("/api/export/ybk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ outputDir: outputDir || undefined }),
+    });
     const data = await res.json();
-    showToast(`Exported to ${data.fileName}`);
-  }, [showToast]);
+    showToast(`Exported to ${data.path}`);
+  }, [showToast, notebookDir]);
 
   const handleCutCell = useCallback(() => {
     if (!focusedCellId) return;
@@ -910,7 +1176,7 @@ export function App() {
     { id: "run-above", label: "Run All Above", action: () => handleRunAllAbove() },
     { id: "run-below", label: "Run All Below", action: () => handleRunAllBelow() },
     { id: "interrupt", label: "Interrupt Execution", shortcut: "I I", action: handleInterrupt },
-    { id: "file-explorer", label: "Toggle File Explorer", shortcut: "Ctrl+B", action: () => setLeftSidebarOpen((p) => !p) },
+    { id: "file-explorer", label: "Toggle File Explorer", shortcut: "Ctrl+B", action: toggleSidebar },
   ], [handleRestart, handleRunAll, handleSave, handleAddCell, toggleTheme, handleExportIpynb, handleExportYbk, togglePresentation, handleRunAllAbove, handleRunAllBelow, handleInterrupt]);
 
   const FONT_SIZES = [12, 13, 14, 16];
@@ -918,7 +1184,7 @@ export function App() {
   const handleFontSizeIncrease = useCallback(() => {
     setSettings((s) => {
       const idx = FONT_SIZES.indexOf(s.editor.fontSize);
-      const next = idx < FONT_SIZES.length - 1 ? FONT_SIZES[idx + 1] : s.editor.fontSize;
+      const next = idx < FONT_SIZES.length - 1 ? FONT_SIZES[idx + 1]! : s.editor.fontSize;
       const updated = { ...s, editor: { ...s.editor, fontSize: next } };
       fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updated) });
       return updated;
@@ -928,7 +1194,7 @@ export function App() {
   const handleFontSizeDecrease = useCallback(() => {
     setSettings((s) => {
       const idx = FONT_SIZES.indexOf(s.editor.fontSize);
-      const next = idx > 0 ? FONT_SIZES[idx - 1] : s.editor.fontSize;
+      const next = idx > 0 ? FONT_SIZES[idx - 1]! : s.editor.fontSize;
       const updated = { ...s, editor: { ...s.editor, fontSize: next } };
       fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updated) });
       return updated;
@@ -963,14 +1229,39 @@ export function App() {
     onOpenPalette: () => setPaletteOpen(true),
     onTogglePresentation: togglePresentation,
     onInterrupt: handleInterrupt,
+    onToggleLanguage: () => {
+      if (!focusedCellId) return;
+      const cell = cellsRef.current.find((c) => c.id === focusedCellId);
+      const current = cell?.metadata?.language as string | undefined;
+      handleChangeLanguage(focusedCellId, current === "python" ? "typescript" : "python");
+    },
     onUndo: history.undo,
     onRedo: history.redo,
-    onToggleFileExplorer: () => setLeftSidebarOpen((p) => !p),
+    onToggleFileExplorer: toggleSidebar,
     onFocusCell: (cellId: string) => setFocusedCellId(cellId),
+    onToggleFindReplace: () => setFindReplaceOpen((p) => !p),
   });
 
   return (
     <>
+      {notebookDeleted && (
+        <div className="modal-overlay" style={{ zIndex: 9999 }}>
+          <div className="modal-content" style={{ maxWidth: 400, textAlign: "center" }}>
+            <div style={{ padding: "32px 24px" }}>
+              <i className="bi bi-file-earmark-x" style={{ fontSize: 40, color: "var(--status-error)", display: "block", marginBottom: 12 }} />
+              <h2 style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)", marginBottom: 8 }}>Notebook Deleted</h2>
+              <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0, lineHeight: 1.5 }}>
+                This notebook has been deleted. You can close this tab or create a new notebook.
+              </p>
+              <div style={{ marginTop: 20, display: "flex", gap: 8, justifyContent: "center" }}>
+                <button className="dialog-btn dialog-btn-primary" onClick={() => window.location.reload()}>
+                  Reload
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {isPresenting ? (
         <div className="presentation-header">
           <span className="presentation-badge">&#9654; Presenting</span>
@@ -980,7 +1271,7 @@ export function App() {
       ) : (
         <>
           <div className="toolbar">
-            <span className="toolbar-logo">🍞 yeastbook</span>
+            <span className="toolbar-logo"><img src="./favicon.png" alt="" width="26" height="26" style={{ verticalAlign: "middle", marginRight: 6 }} />yeastbook</span>
             <EditableFileName fileName={fileName} onRename={handleRename} />
             <span style={{ flex: 1 }} />
             <button onClick={togglePresentation} className="toolbar-btn present-btn" title="Presentation mode (Ctrl+Shift+E)">
@@ -1021,9 +1312,16 @@ export function App() {
             onRedo={history.redo}
             canUndo={history.canUndo()}
             canRedo={history.canRedo()}
-            onToggleFileExplorer={() => setLeftSidebarOpen((p) => !p)}
+            onToggleFileExplorer={toggleSidebar}
             settings={settings}
             onUpdateSettings={handleUpdateSettings}
+            pythonPath={pythonPath}
+            onSelectPythonEnv={() => setPythonPickerOpen(true)}
+            onCreateVenv={handleCreateVenv}
+            onCloseNotebook={filePath ? handleCloseNotebook : undefined}
+            performanceMode={performanceMode}
+            onTogglePerfMode={() => handleUpdateSettings({ ...settings, execution: { ...settings.execution, performanceMode: !performanceMode } })}
+            showToast={showToast}
           />
         </>
       )}
@@ -1040,24 +1338,40 @@ export function App() {
       <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} version={version} bunVersion={bunVersion} />
       <Profiler id="notebook" onRender={perfMetrics.onProfilerRender}>
       <div className="notebook-layout">
-      {!isPresenting && !leftSidebarOpen && (
-        <button
-          className="sidebar-left-tab"
-          title="Open File Explorer (Ctrl+B)"
-          onClick={() => setLeftSidebarOpen(true)}
-        >
-          <i className="bi bi-folder" />
-        </button>
-      )}
       {!isPresenting && (
-        <div className={`sidebar-left ${leftSidebarOpen ? "" : "collapsed"}`}>
-          <FileExplorer
-            onOpenNotebook={handleOpenFile}
-            onClose={() => setLeftSidebarOpen(false)}
-            refreshTrigger={fileTreeVersion}
-          />
+        <LeftSidebar
+          cells={cells}
+          variables={variables}
+          dependencies={dependencies}
+          inspectionResults={inspectionResults}
+          onInspectVariable={(name) => send({ type: "variable_inspect", name })}
+          onScrollToCell={(id) => {
+            document.getElementById(`cell-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+          }}
+          onOpenNotebook={handleOpenFile}
+          fileTreeRefresh={fileTreeVersion}
+          performanceMode={performanceMode}
+          onSuggestPerfMode={() => handleUpdateSettings({ ...settings, execution: { ...settings.execution, performanceMode: true } })}
+        />
+      )}
+      <FindReplace
+        open={findReplaceOpen}
+        onClose={() => setFindReplaceOpen(false)}
+        editorRefs={editorRefsMap}
+        onSourceChange={handleSourceChange}
+      />
+      {notebookLoading && (
+        <div className="notebook-loading">
+          <div className="loading-bar" />
+          <p>Loading notebook...</p>
         </div>
       )}
+      {!notebookLoading && filePath === null ? (
+        <WelcomeScreen
+          onNewNotebook={handleNewNotebook}
+          onOpenExplorer={() => window.dispatchEvent(new CustomEvent("yeastbook-open-files"))}
+        />
+      ) : (
       <NotebookView
         cells={cells}
         busyCells={busyCells}
@@ -1080,6 +1394,7 @@ export function App() {
         onRunAllBelow={handleRunAllBelow}
         onInterrupt={handleInterrupt}
         onChangeCellType={handleChangeCellType}
+        onChangeLanguage={handleChangeLanguage}
         onInsertCellAt={handleInsertCellAt}
         onCutCell={handleCutCellById}
         onCopyCell={handleCopyCellById}
@@ -1090,18 +1405,38 @@ export function App() {
         onReorderCell={handleReorderCell}
         onSave={handleSave}
         onOpenPalette={() => setPaletteOpen(true)}
+        onEditorMount={handleEditorMount}
+        onSelectAcrossCells={handleSelectAcrossCells}
+        onBlurSave={flushCellSave}
+        execTiming={execTiming}
       />
-      {settings.layout?.sidebar && !isPresenting && (
-        <div className="notebook-sidebar">
-          <VariableExplorer variables={variables} />
-          <EnvExplorer />
-          <DependenciesPanel dependencies={dependencies} />
-        </div>
       )}
       </div>
       </Profiler>
-      {toast && settings.appearance.notifications === "show" && <div className="toast">{toast}</div>}
-      {!isPresenting && <StatusBar mode={mode} connected={connected} saved={saved} notification={settings.appearance.notifications === "minimize" ? toast : null} />}
+      {toast && settings.appearance.notifications === "show" && (
+        <div className="toast">
+          {toast}
+          {toastAction && (
+            <button className="toast-action" onClick={() => { toastAction.action(); setToast(null); setToastAction(null); }}>
+              {toastAction.label}
+            </button>
+          )}
+        </div>
+      )}
+      {!isPresenting && <StatusBar mode={mode} connected={connected} saved={saved} saveStatus={saveStatus} notification={settings.appearance.notifications === "minimize" ? toast : null} bunVersion={bunVersion} pythonPath={pythonPath} hasVenv={hasVenv} onCreateVenv={handleCreateVenv} onRetrySave={handleSave} forceOpenPicker={pythonPickerOpen} onPickerOpened={() => setPythonPickerOpen(false)} performanceMode={performanceMode} onTogglePerfMode={() => handleUpdateSettings({ ...settings, execution: { ...settings.execution, performanceMode: !performanceMode } })} />}
+      {bootstrapOpen && (
+        <PythonBootstrapModal
+          onClose={() => setBootstrapOpen(false)}
+          onComplete={(p) => { setPythonPath(p); setHasVenv(true); }}
+          logs={bootstrapLogs}
+          phase={bootstrapPhase}
+          requirements={bootstrapRequirements}
+          error={bootstrapError}
+          pythonPath={bootstrapPythonPath}
+          onAction={handleBootstrapAction}
+          onInstallDeps={handleBootstrapInstallDeps}
+        />
+      )}
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={paletteCommands} />
       {debugEnabled && <PerfHUD metrics={perfMetrics.metrics} />}
     </>

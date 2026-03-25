@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     // Environment setup & latest features
-    "lib": ["ESNext"],
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "target": "ESNext",
     "module": "Preserve",
     "moduleDetection": "force",
@@ -24,6 +24,22 @@
     // Some stricter flags (disabled by default)
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "noPropertyAccessFromIndexSignature": false
-  }
+    "noPropertyAccessFromIndexSignature": false,
+
+    // Workspace path mappings
+    "paths": {
+      "@codepawl/yeastbook-core": ["./packages/core/src/index.ts"]
+    }
+  },
+  "include": [
+    "packages/app/src/**/*",
+    "packages/core/src/**/*",
+    "tests/**/*"
+  ],
+  "exclude": [
+    "packages/ui",
+    "packages/vscode",
+    "node_modules",
+    "tests/history.test.ts"
+  ]
 }

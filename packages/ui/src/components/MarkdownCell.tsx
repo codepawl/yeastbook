@@ -3,11 +3,13 @@ import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { ContextMenu, type ContextMenuItem } from "./ContextMenu.tsx";
 
-import type { Cell } from "@yeastbook/core";
+
+import type { Cell } from "@codepawl/yeastbook-core";
 
 interface Props {
   cell: Cell;
   isPresenting?: boolean;
+  isCommandFocused?: boolean;
   onUpdate: (cellId: string, source: string) => void;
   onDelete: (cellId: string) => void;
   onMoveUp?: () => void;
@@ -18,10 +20,11 @@ interface Props {
   dragHandleRef?: React.RefObject<HTMLDivElement | null>;
 }
 
-export function MarkdownCell({ cell, isPresenting, onUpdate, onDelete, onMoveUp, onMoveDown, onChangeType, onCopy, onInsertBelow, dragHandleRef }: Props) {
+export function MarkdownCell({ cell, isPresenting, isCommandFocused, onUpdate, onDelete, onMoveUp, onMoveDown, onChangeType, onCopy, onInsertBelow, dragHandleRef }: Props) {
   const source = cell.source.join("\n");
   const [editing, setEditing] = useState(!source.trim());
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [moreMenu, setMoreMenu] = useState<{ x: number; y: number } | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
 
   const autoResize = useCallback(() => {
@@ -81,10 +84,12 @@ export function MarkdownCell({ cell, isPresenting, onUpdate, onDelete, onMoveUp,
     { id: "add-code", label: "Add Code Cell Below", icon: "bi bi-plus-square", onClick: () => onInsertBelow?.("code") },
     { id: "add-md", label: "Add Markdown Below", icon: "bi bi-markdown", onClick: () => onInsertBelow?.("markdown") },
     { id: "sep3", label: "", separator: true },
-    { id: "delete", label: "Delete Cell", icon: "bi bi-trash3", danger: true, onClick: () => onDelete(cell.id) },
+    { id: "to-code", label: "Change to Code", icon: "bi bi-code-slash", shortcut: "Y", onClick: onChangeType },
     { id: "sep4", label: "", separator: true },
+    { id: "delete", label: "Delete Cell", icon: "bi bi-trash3", danger: true, onClick: () => onDelete(cell.id) },
+    { id: "sep5", label: "", separator: true },
     { id: "native", label: "Show Native Menu", icon: "bi bi-window", onClick: showNativeMenu },
-  ], [editing, onCopy, onMoveUp, onMoveDown, onInsertBelow, onDelete, cell.id, showNativeMenu]);
+  ], [editing, onCopy, onMoveUp, onMoveDown, onInsertBelow, onChangeType, onDelete, cell.id, showNativeMenu]);
 
   // Content is sanitized via DOMPurify before being set as innerHTML
   const sanitizedHtml = source.trim()
@@ -92,19 +97,35 @@ export function MarkdownCell({ cell, isPresenting, onUpdate, onDelete, onMoveUp,
     : "";
 
   return (
-    <div className="cell" id={`cell-${cell.id}`} onContextMenu={handleContextMenu}>
+    <div className={`cell ${isCommandFocused ? "command-focused" : ""}`} id={`cell-${cell.id}`} onContextMenu={handleContextMenu}>
       <div className="cell-header">
         <div ref={dragHandleRef} className="cell-drag-handle" title="Drag to reorder"><i className="bi bi-grip-vertical" /></div>
-        <button className="cell-type cell-type-toggle" onClick={(e) => { e.stopPropagation(); onChangeType?.(); }} title="Switch to code (Y)">markdown</button>
+        {editing && (
+          <button className="run-btn" onClick={renderMarkdown} title="Render markdown (Shift+Enter)"><i className="bi bi-play-fill" /></button>
+        )}
+        <span className="cell-type-label" onClick={(e) => { e.stopPropagation(); onChangeType?.(); }} title="Click to change to code">markdown</span>
         <div className="cell-actions">
-          {onMoveUp && <button onClick={() => onMoveUp()} title="Move up"><i className="bi bi-arrow-up" /></button>}
-          {onMoveDown && <button onClick={() => onMoveDown()} title="Move down"><i className="bi bi-arrow-down" /></button>}
-          {editing && (
-            <button className="run-btn" onClick={renderMarkdown} title="Render markdown"><i className="bi bi-play-fill" /></button>
-          )}
-          <button onClick={() => onDelete(cell.id)} title="Delete cell"><i className="bi bi-trash3" /></button>
+          <button className="cell-more-btn" onClick={(e) => {
+            e.stopPropagation();
+            const rect = (e.target as HTMLElement).getBoundingClientRect();
+            setMoreMenu(moreMenu ? null : { x: rect.left, y: rect.bottom + 2 });
+          }} title="More actions">
+            <i className="bi bi-three-dots" />
+          </button>
         </div>
       </div>
+      {moreMenu && (
+        <ContextMenu x={moreMenu.x} y={moreMenu.y} onClose={() => setMoreMenu(null)} items={[
+          { id: "edit", label: editing ? "Render Markdown" : "Edit Markdown", icon: editing ? "bi bi-eye" : "bi bi-pencil", onClick: () => editing ? renderMarkdown() : setEditing(true) },
+          { id: "sep1", label: "", separator: true },
+          { id: "move-up", label: "Move Up", icon: "bi bi-arrow-up", onClick: onMoveUp, disabled: !onMoveUp },
+          { id: "move-down", label: "Move Down", icon: "bi bi-arrow-down", onClick: onMoveDown, disabled: !onMoveDown },
+          { id: "sep2", label: "", separator: true },
+          { id: "to-code", label: "Change to Code", icon: "bi bi-code-slash", shortcut: "Y", onClick: onChangeType },
+          { id: "sep3", label: "", separator: true },
+          { id: "delete", label: "Delete Cell", icon: "bi bi-trash3", danger: true, onClick: () => onDelete(cell.id) },
+        ]} />
+      )}
       {editing ? (
         <div className="code-area">
           <textarea
