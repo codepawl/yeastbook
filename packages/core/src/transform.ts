@@ -63,9 +63,10 @@ function transformSingleImport(stmt: string): string {
   const mod = moduleMatch[1];
 
   // Extract import clause (everything between "import" and "from")
-  const clauseMatch = stmt.match(/^import\s+([\s\S]+?)\s+from\s+["'][^"']+["']/);
-  if (!clauseMatch) return stmt;
-  const clause = clauseMatch[1]!.replace(/\n/g, " ").trim();
+  const fromIdx = stmt.lastIndexOf(" from ");
+  if (fromIdx === -1) return stmt;
+  const clause = stmt.slice(stmt.indexOf("import") + 6, fromIdx).replace(/\n/g, " ").trim();
+  if (!clause) return stmt;
 
   // Namespace: import * as name from "..."
   const ns = clause.match(/^\*\s+as\s+(\w+)$/);

@@ -113,6 +113,8 @@ jobs:
     name: Update Homebrew formula
     runs-on: ubuntu-latest
     needs: [publish-app]
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
