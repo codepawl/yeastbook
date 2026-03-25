@@ -196,17 +196,15 @@ describe("ExecutionQueue", () => {
   test("cancelAll empties the queue", async () => {
     const queue = new ExecutionQueue();
 
-    // Use a long-running executor to keep first item busy
     const executor: Executor = async () => {
-      await delay(200);
+      await delay(50);
     };
 
-    // First item starts running immediately; second and third are queued
+    // Fire and forget — these promises may never resolve after cancelAll
     queue.enqueue("cell-1", "code", 1, executor).catch(() => {});
     queue.enqueue("cell-2", "code", 2, executor).catch(() => {});
     queue.enqueue("cell-3", "code", 3, executor).catch(() => {});
 
-    // Give cell-1 time to start so cell-2 and cell-3 sit in the queue
     await delay(5);
     expect(queue.length).toBe(2);
 
@@ -237,22 +235,17 @@ describe("ExecutionQueue", () => {
     const queue = new ExecutionQueue();
 
     const executor: Executor = async () => {
-      await delay(200);
+      await delay(50);
     };
 
-    // First item starts executing immediately (not in queue)
     queue.enqueue("cell-1", "code", 1, executor).catch(() => {});
-
-    // Small delay to ensure cell-1 has started running
     await delay(5);
 
-    // These two should be waiting in the queue
     queue.enqueue("cell-2", "code", 2, executor).catch(() => {});
     queue.enqueue("cell-3", "code", 3, executor).catch(() => {});
 
     expect(queue.length).toBe(2);
 
-    // Clean up
     queue.cancelAll();
   });
 });

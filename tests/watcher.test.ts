@@ -72,5 +72,6 @@ describe("watchNotebook edge cases", () => {
       cleanup = watchNotebook(path, () => {});
     }).not.toThrow();
     expect(typeof cleanup).toBe("function");
+    cleanup?.();
   });
 });
