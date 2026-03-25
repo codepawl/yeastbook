@@ -730,7 +730,7 @@ export async function startServer(filePath: string | null, port: number = 3000, 
             const cpus2 = os.cpus();
             let totalIdle = 0, totalTick = 0;
             for (let i = 0; i < cpus1.length; i++) {
-              const t1 = cpus1[i].times, t2 = cpus2[i].times;
+              const t1 = cpus1[i]!.times, t2 = cpus2[i]!.times;
               const idle = t2.idle - t1.idle;
               const total = (t2.user - t1.user) + (t2.nice - t1.nice) + (t2.sys - t1.sys) + (t2.irq - t1.irq) + idle;
               totalIdle += idle;
@@ -751,9 +751,9 @@ export async function startServer(filePath: string | null, port: number = 3000, 
               const parts = text.trim().split(",").map((s) => s.trim());
               if (parts.length >= 4) {
                 stats.gpuName = parts[0];
-                stats.gpuPercent = parseInt(parts[1]) || 0;
-                stats.vramUsedMB = parseInt(parts[2]) || 0;
-                stats.vramTotalMB = parseInt(parts[3]) || 0;
+                stats.gpuPercent = parseInt(parts[1]!) || 0;
+                stats.vramUsedMB = parseInt(parts[2]!) || 0;
+                stats.vramTotalMB = parseInt(parts[3]!) || 0;
                 stats.vramPercent = (stats.vramTotalMB as number) > 0
                   ? Math.round(((stats.vramUsedMB as number) / (stats.vramTotalMB as number)) * 100)
                   : 0;
@@ -1454,7 +1454,7 @@ declare function createSelect(config: { options: string[]; value?: string; label
 
             async function streamProcess(proc: ReturnType<typeof Bun.spawn>) {
               const stdoutReader = (async () => {
-                const reader = proc.stdout.getReader();
+                const reader = (proc.stdout as ReadableStream<Uint8Array>).getReader();
                 while (true) {
                   const { done, value } = await reader.read();
                   if (done) break;
