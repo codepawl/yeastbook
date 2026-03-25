@@ -29,6 +29,43 @@
           "text": [
             "Dataset size: 12 samples\nFeatures: size_sqft, bedrooms, age_years\nTarget: price_usd\n"
           ]
+        },
+        {
+          "output_type": "execute_result",
+          "data": {
+            "text/plain": "[\n  {\n    features: [ 1200, 2, 10 ],\n    price: 250000,\n  }, {\n    features: [ 1500, 3, 5 ],\n    price: 350000,\n  }, {\n    features: [ 900, 1, 20 ],\n    price: 180000,\n  }\n]"
+          },
+          "metadata": {},
+          "execution_count": 1,
+          "richOutput": {
+            "type": "table",
+            "rows": [
+              {
+                "features": [
+                  1200,
+                  2,
+                  10
+                ],
+                "price": 250000
+              },
+              {
+                "features": [
+                  1500,
+                  3,
+                  5
+                ],
+                "price": 350000
+              },
+              {
+                "features": [
+                  900,
+                  1,
+                  20
+                ],
+                "price": 180000
+              }
+            ]
+          }
         }
       ],
       "executionCount": 1
@@ -57,7 +94,7 @@
           "output_type": "stream",
           "name": "stdout",
           "text": [
-            "Model initialized\nInitial weights: [ \"-0.0002\", \"0.0001\", \"-0.0025\" ]\n"
+            "Model initialized\nInitial weights: [ \"-0.0044\", \"-0.0030\", \"-0.0004\" ]\n"
           ]
         }
       ],
@@ -72,7 +109,7 @@
           "output_type": "stream",
           "name": "stdout",
           "text": [
-            "Training started...\nTraining done in 9.0ms\n\nLoss curve (every 100 epochs):\n  Epoch 0: RMSE=$320,117\n  Epoch 100: RMSE=$13,408\n  Epoch 200: RMSE=$11,686\n  Epoch 300: RMSE=$11,194\n  Epoch 400: RMSE=$10,922\n  Epoch 500: RMSE=$10,743\n  Epoch 600: RMSE=$10,623\n  Epoch 700: RMSE=$10,544\n  Epoch 800: RMSE=$10,491\n  Epoch 900: RMSE=$10,455\n  Epoch 1000: RMSE=$10,432\n  Epoch 1100: RMSE=$10,416\n  Epoch 1200: RMSE=$10,406\n  Epoch 1300: RMSE=$10,399\n  Epoch 1400: RMSE=$10,395\n  Epoch 1500: RMSE=$10,392\n  Epoch 1600: RMSE=$10,390\n  Epoch 1700: RMSE=$10,388\n  Epoch 1800: RMSE=$10,387\n  Epoch 1900: RMSE=$10,387\n"
+            "Training started...\nTraining done in 5.2ms\n\nLoss curve (every 100 epochs):\n  Epoch 0: RMSE=$320,117\n  Epoch 100: RMSE=$13,408\n  Epoch 200: RMSE=$11,686\n  Epoch 300: RMSE=$11,194\n  Epoch 400: RMSE=$10,922\n  Epoch 500: RMSE=$10,743\n  Epoch 600: RMSE=$10,623\n  Epoch 700: RMSE=$10,544\n  Epoch 800: RMSE=$10,491\n  Epoch 900: RMSE=$10,455\n  Epoch 1000: RMSE=$10,432\n  Epoch 1100: RMSE=$10,416\n  Epoch 1200: RMSE=$10,406\n  Epoch 1300: RMSE=$10,399\n  Epoch 1400: RMSE=$10,395\n  Epoch 1500: RMSE=$10,392\n  Epoch 1600: RMSE=$10,390\n  Epoch 1700: RMSE=$10,388\n  Epoch 1800: RMSE=$10,387\n  Epoch 1900: RMSE=$10,387\n"
           ]
         }
       ],
@@ -86,34 +123,39 @@
         {
           "output_type": "execute_result",
           "data": {
-            "text/plain": "[\n  320117.0275444548, 13407.839320751205, 11686.469508820739, 11194.459273025272,\n  10921.828385946035, 10743.02348747724, 10623.489761648332, 10543.677588953613, 10490.529255403988,\n  10455.208835022775, 10431.769009730602, 10416.228172369772, 10405.930909132156,\n  10399.110855205758, 10394.595069454881, 10391.60556684019, 10389.626722734098, 10388.316970525168,\n  10387.450121504913, 10386.876424737533\n]"
+            "text/plain": "{\n  __type: \"chart\",\n  data: [\n    320117.02941882546, 13407.839410652945, 11686.469543044488, 11194.459293756658,\n    10921.828399763286, 10743.023496752907, 10623.489767854104, 10543.677593091355,\n    10490.5292581561, 10455.208836850205, 10431.769010942673, 10416.228173173065,\n    10405.930909664294, 10399.110855558145, 10394.595069688175, 10391.605566994614,\n    10389.62672283632, 10388.316970592823, 10387.450121549695, 10386.876424767175\n  ],\n  config: {\n    chartType: \"line\",\n    label: \"RMSE (USD)\",\n    title: \"Training Loss Over Time\",\n  },\n}"
           },
           "metadata": {},
           "execution_count": 5,
           "richOutput": {
-            "type": "json",
+            "type": "chart",
             "data": [
-              320117.0275444548,
-              13407.839320751205,
-              11686.469508820739,
-              11194.459273025272,
-              10921.828385946035,
-              10743.02348747724,
-              10623.489761648332,
-              10543.677588953613,
-              10490.529255403988,
-              10455.208835022775,
-              10431.769009730602,
-              10416.228172369772,
-              10405.930909132156,
-              10399.110855205758,
-              10394.595069454881,
-              10391.60556684019,
-              10389.626722734098,
-              10388.316970525168,
-              10387.450121504913,
-              10386.876424737533
-            ]
+              320117.02941882546,
+              13407.839410652945,
+              11686.469543044488,
+              11194.459293756658,
+              10921.828399763286,
+              10743.023496752907,
+              10623.489767854104,
+              10543.677593091355,
+              10490.5292581561,
+              10455.208836850205,
+              10431.769010942673,
+              10416.228173173065,
+              10405.930909664294,
+              10399.110855558145,
+              10394.595069688175,
+              10391.605566994614,
+              10389.62672283632,
+              10388.316970592823,
+              10387.450121549695,
+              10386.876424767175
+            ],
+            "config": {
+              "chartType": "line",
+              "label": "RMSE (USD)",
+              "title": "Training Loss Over Time"
+            }
           }
         }
       ],
@@ -138,14 +180,180 @@
       "id": "lr-07-compare",
       "type": "code",
       "source": "// Cell 7: Compare predictions vs actual\nconst comparison = dataset.X.map((x, i) => ({\n  features: { sqft: x[0], beds: x[1], age: x[2] },\n  actual: `$${dataset.y[i]!.toLocaleString()}`,\n  predicted: `$${Math.round(yPred[i]!).toLocaleString()}`,\n  error: `${(((yPred[i]! - dataset.y[i]!) / dataset.y[i]!) * 100).toFixed(1)}%`\n}))\ncomparison",
-      "outputs": [],
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "data": {
+            "text/plain": "[\n  {\n    features: {\n      sqft: 1200,\n      beds: 2,\n      age: 10,\n    },\n    actual: \"$250,000\",\n    predicted: \"$257,297\",\n    error: \"2.9%\",\n  }, {\n    features: {\n      sqft: 1500,\n      beds: 3,\n      age: 5,\n    },\n    actual: \"$350,000\",\n    predicted: \"$341,199\",\n    error: \"-2.5%\",\n  }, {\n    features: {\n      sqft: 900,\n      beds: 1,\n      age: 20,\n    },\n    actual: \"$180,000\",\n    predicted: \"$173,876\",\n    error: \"-3.4%\",\n  }, {\n    features: {\n      sqft: 2000,\n      beds: 4,\n      age: 2,\n    },\n    actual: \"$480,000\",\n    predicted: \"$467,661\",\n    error: \"-2.6%\",\n  }, {\n    features: {\n      sqft: 1800,\n      beds: 3,\n      age: 8,\n    },\n    actual: \"$420,000\",\n    predicted: \"$405,039\",\n    error: \"-3.6%\",\n  }, {\n    features: {\n      sqft: 1100,\n      beds: 2,\n      age: 15,\n    },\n    actual: \"$220,000\",\n    predicted: \"$236,594\",\n    error: \"7.5%\",\n  }, {\n    features: {\n      sqft: 2500,\n      beds: 5,\n      age: 1,\n    },\n    actual: \"$580,000\",\n    predicted: \"$594,315\",\n    error: \"2.5%\",\n  }, {\n    features: {\n      sqft: 1300,\n      beds: 2,\n      age: 12,\n    },\n    actual: \"$270,000\",\n    predicted: \"$278,673\",\n    error: \"3.2%\",\n  }, {\n    features: {\n      sqft: 1600,\n      beds: 3,\n      age: 6,\n    },\n    actual: \"$370,000\",\n    predicted: \"$362,479\",\n    error: \"-2.0%\",\n  }, {\n    features: {\n      sqft: 800,\n      beds: 1,\n      age: 25,\n    },\n    actual: \"$160,000\",\n    predicted: \"$153,173\",\n    error: \"-4.3%\",\n  }, {\n    features: {\n      sqft: 2200,\n      beds: 4,\n      age: 3,\n    },\n    actual: \"$510,000\",\n    predicted: \"$510,125\",\n    error: \"0.0%\",\n  }, {\n    features: {\n      sqft: 1400,\n      beds: 2,\n      age: 9,\n    },\n    actual: \"$290,000\",\n    predicted: \"$299,569\",\n    error: \"3.3%\",\n  }\n]"
+          },
+          "metadata": {},
+          "execution_count": 7,
+          "richOutput": {
+            "type": "table",
+            "rows": [
+              {
+                "features": {
+                  "sqft": 1200,
+                  "beds": 2,
+                  "age": 10
+                },
+                "actual": "$250,000",
+                "predicted": "$257,297",
+                "error": "2.9%"
+              },
+              {
+                "features": {
+                  "sqft": 1500,
+                  "beds": 3,
+                  "age": 5
+                },
+                "actual": "$350,000",
+                "predicted": "$341,199",
+                "error": "-2.5%"
+              },
+              {
+                "features": {
+                  "sqft": 900,
+                  "beds": 1,
+                  "age": 20
+                },
+                "actual": "$180,000",
+                "predicted": "$173,876",
+                "error": "-3.4%"
+              },
+              {
+                "features": {
+                  "sqft": 2000,
+                  "beds": 4,
+                  "age": 2
+                },
+                "actual": "$480,000",
+                "predicted": "$467,661",
+                "error": "-2.6%"
+              },
+              {
+                "features": {
+                  "sqft": 1800,
+                  "beds": 3,
+                  "age": 8
+                },
+                "actual": "$420,000",
+                "predicted": "$405,039",
+                "error": "-3.6%"
+              },
+              {
+                "features": {
+                  "sqft": 1100,
+                  "beds": 2,
+                  "age": 15
+                },
+                "actual": "$220,000",
+                "predicted": "$236,594",
+                "error": "7.5%"
+              },
+              {
+                "features": {
+                  "sqft": 2500,
+                  "beds": 5,
+                  "age": 1
+                },
+                "actual": "$580,000",
+                "predicted": "$594,315",
+                "error": "2.5%"
+              },
+              {
+                "features": {
+                  "sqft": 1300,
+                  "beds": 2,
+                  "age": 12
+                },
+                "actual": "$270,000",
+                "predicted": "$278,673",
+                "error": "3.2%"
+              },
+              {
+                "features": {
+                  "sqft": 1600,
+                  "beds": 3,
+                  "age": 6
+                },
+                "actual": "$370,000",
+                "predicted": "$362,479",
+                "error": "-2.0%"
+              },
+              {
+                "features": {
+                  "sqft": 800,
+                  "beds": 1,
+                  "age": 25
+                },
+                "actual": "$160,000",
+                "predicted": "$153,173",
+                "error": "-4.3%"
+              },
+              {
+                "features": {
+                  "sqft": 2200,
+                  "beds": 4,
+                  "age": 3
+                },
+                "actual": "$510,000",
+                "predicted": "$510,125",
+                "error": "0.0%"
+              },
+              {
+                "features": {
+                  "sqft": 1400,
+                  "beds": 2,
+                  "age": 9
+                },
+                "actual": "$290,000",
+                "predicted": "$299,569",
+                "error": "3.3%"
+              }
+            ]
+          }
+        }
+      ],
       "executionCount": 7
     },
     {
       "id": "lr-08-predict",
       "type": "code",
       "source": "// Cell 8: Predict on new houses\nfunction predictPrice(\n  sqft: number,\n  bedrooms: number,\n  ageYears: number\n): number {\n  const input = [[\n    (sqft - mean[0]!) / std[0]!,\n    (bedrooms - mean[1]!) / std[1]!,\n    (ageYears - mean[2]!) / std[2]!,\n  ]]\n  return Math.round(model.predict(input)[0]!)\n}\n\nconst newHouses = [\n  { sqft: 1700, beds: 3, age: 7 },\n  { sqft: 3000, beds: 5, age: 1 },\n  { sqft: 700, beds: 1, age: 30 },\n]\n\nnewHouses.map(h => ({\n  ...h,\n  predictedPrice: `$${predictPrice(h.sqft, h.beds, h.age).toLocaleString()}`\n}))",
-      "outputs": [],
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "data": {
+            "text/plain": "[\n  {\n    sqft: 1700,\n    beds: 3,\n    age: 7,\n    predictedPrice: \"$383,759\",\n  }, {\n    sqft: 3000,\n    beds: 5,\n    age: 1,\n    predictedPrice: \"$700,234\",\n  }, {\n    sqft: 700,\n    beds: 1,\n    age: 30,\n    predictedPrice: \"$132,469\",\n  }\n]"
+          },
+          "metadata": {},
+          "execution_count": 8,
+          "richOutput": {
+            "type": "table",
+            "rows": [
+              {
+                "sqft": 1700,
+                "beds": 3,
+                "age": 7,
+                "predictedPrice": "$383,759"
+              },
+              {
+                "sqft": 3000,
+                "beds": 5,
+                "age": 1,
+                "predictedPrice": "$700,234"
+              },
+              {
+                "sqft": 700,
+                "beds": 1,
+                "age": 30,
+                "predictedPrice": "$132,469"
+              }
+            ]
+          }
+        }
+      ],
       "executionCount": 8
     },
     {
@@ -162,7 +370,7 @@
           "output_type": "stream",
           "name": "stdout",
           "text": [
-            "Neural net initialized: 3 → 8 → 1\nNeural Net RMSE: $17,927\nLinear Model RMSE: $10,386\n"
+            "Neural net initialized: 3 → 8 → 1\nNeural Net RMSE: $22,663\nLinear Model RMSE: $10,386\n"
           ]
         }
       ],
@@ -172,21 +380,42 @@
       "id": "lr-11-chart",
       "type": "code",
       "source": "// Cell 10: Model comparison chart\n;({\n  __type: \"chart\",\n  data: [Math.sqrt(model.mse(y, yPred)), Math.sqrt(\n    y.reduce((s, yi, i) => s + Math.pow(yi - X_norm.map(x =>\n      Math.round(nn.forward(x).out * 1e6))[i]!, 2), 0) / y.length\n  )],\n  config: {\n    chartType: \"bar\",\n    label: \"RMSE (USD)\",\n    title: \"Linear Regression vs Neural Network\",\n  }\n})",
+      "metadata": {
+        "language": "typescript"
+      },
       "outputs": [
         {
           "output_type": "execute_result",
           "data": {
-            "text/plain": "17926.662879632673"
+            "text/plain": "{\n  __type: \"chart\",\n  data: [ 10386.499823691049, 22663.266775040767 ],\n  config: {\n    chartType: \"bar\",\n    label: \"RMSE (USD)\",\n    title: \"Linear Regression vs Neural Network\",\n  },\n}"
           },
           "metadata": {},
           "execution_count": 10,
           "richOutput": {
-            "type": "text",
-            "text": "17926.662879632673"
+            "type": "chart",
+            "data": [
+              10386.499823691049,
+              22663.266775040767
+            ],
+            "config": {
+              "chartType": "bar",
+              "label": "RMSE (USD)",
+              "title": "Linear Regression vs Neural Network"
+            }
           }
         }
       ],
       "executionCount": 10
+    },
+    {
+      "id": "0f2d3e0b-a97c-4cc6-bec3-2b4ef276f301",
+      "type": "code",
+      "source": "",
+      "metadata": {
+        "language": "typescript"
+      },
+      "outputs": [],
+      "executionCount": null
     }
   ]
 }

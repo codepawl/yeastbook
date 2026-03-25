@@ -1,4 +1,5 @@
 import { JsonTree } from "./outputs/JsonTree.tsx";
+import { FilePreviewOutput } from "./outputs/FilePreviewOutput.tsx";
 import { DataTable } from "./outputs/DataTable.tsx";
 import { ChartOutput } from "./outputs/ChartOutput.tsx";
 import { HtmlOutput } from "./outputs/HtmlOutput.tsx";
@@ -82,6 +83,8 @@ function RichOutputRenderer({ output, performanceMode }: { output: NonNullable<C
       return <PluginRenderer pluginType={(output as any).pluginType} data={(output as any).data} />;
     case "mime":
       return <MimeOutput mime={(output as any).mime} data={(output as any).data} url={(output as any).url} performanceMode={performanceMode} />;
+    case "file":
+      return <FilePreviewOutput output={output as any} />;
     case "widget": {
       const w = output as any;
       const onUpdate = (widgetId: string, value: unknown) => {

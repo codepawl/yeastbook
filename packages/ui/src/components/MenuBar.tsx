@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import type { Cell, Settings } from "@codepawl/yeastbook-core";
 
 interface NotebookFile {
@@ -22,7 +22,7 @@ function OpenFileMenu({ onOpen, onClose }: { onOpen: (path: string) => void; onC
   return (
     <div className="menu-dropdown open-file-dropdown">
       <div className="open-file-header">Open Notebook</div>
-      {loading && <div className="menu-item disabled">Loading...</div>}
+      {loading && <div className="menu-item disabled"><span className="loading-inline"><img src="./favicon.png" className="loading-mascot-sm" alt="" /> Loading...</span></div>}
       {!loading && files.length === 0 && <div className="menu-item disabled">No .ybk or .ipynb files in current directory</div>}
       {files.map((f) => (
         <button key={f.path} className="menu-item" onClick={() => { onOpen(f.path); onClose(); }}>
@@ -67,6 +67,7 @@ interface Props {
   onInterrupt: () => void;
   onRestart: () => void;
   onRestartAndRunAll: () => void;
+  onClearAllOutputs: () => void;
   onToggleDarkMode: () => void;
   onTogglePresentation: () => void;
   onFontSizeIncrease: () => void;
@@ -88,6 +89,7 @@ interface Props {
   performanceMode?: boolean;
   onTogglePerfMode?: () => void;
   showToast?: (msg: string) => void;
+  onFocusCell?: (cellId: string) => void;
 }
 
 function CustomWidthModal({ currentWidth, onApply, onClose }: { currentWidth: number; onApply: (w: number) => void; onClose: () => void }) {
@@ -265,6 +267,37 @@ export function MenuBar(props: Props) {
     },
   ];
 
+  // --- Jump to error ---
+  const errorCellIds = useMemo(
+    () => props.cells
+      .filter((c) => c.outputs?.some((o: any) => o.output_type === "error"))
+      .map((c) => c.id),
+    [props.cells],
+  );
+  const [errorJumpIndex, setErrorJumpIndex] = useState(0);
+  // Reset cycle when error list changes
+  const errorKey = errorCellIds.join(",");
+  const prevErrorKey = useRef(errorKey);
+  useEffect(() => {
+    if (errorKey !== prevErrorKey.current) {
+      setErrorJumpIndex(0);
+      prevErrorKey.current = errorKey;
+    }
+  }, [errorKey]);
+
+  const handleJumpToError = useCallback(() => {
+    if (errorCellIds.length === 0) return;
+    const targetId = errorCellIds[errorJumpIndex % errorCellIds.length]!;
+    const cellEl = document.getElementById(`cell-${targetId}`);
+    if (cellEl) {
+      cellEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      cellEl.classList.add("cell-error-highlight");
+      setTimeout(() => cellEl.classList.remove("cell-error-highlight"), 600);
+    }
+    props.onFocusCell?.(targetId);
+    setErrorJumpIndex((errorJumpIndex + 1) % errorCellIds.length);
+  }, [errorCellIds, errorJumpIndex, props.onFocusCell]);
+
   const copyNotebook = useCallback((mode: "inputs" | "outputs" | "both") => {
     const parts: string[] = [];
     for (const cell of props.cells) {
@@ -346,6 +379,15 @@ export function MenuBar(props: Props) {
           </div>
         ))}
         <div className="menubar-actions">
+          {errorCellIds.length > 0 && (
+            <button
+              className="menubar-action-btn menubar-error-btn"
+              onClick={handleJumpToError}
+              title={`Jump to next error (${errorCellIds.length} cell${errorCellIds.length > 1 ? "s" : ""} with errors)`}
+            >
+              <i className="bi bi-exclamation-triangle-fill" /> {errorCellIds.length}
+            </button>
+          )}
           <div className="menu-container">
             <button
               className={`menubar-action-btn ${openMenu === "_copy" ? "active" : ""}`}
@@ -390,6 +432,13 @@ export function MenuBar(props: Props) {
             title="Restart Kernel"
           >
             <i className="bi bi-arrow-repeat" /> Restart
+          </button>
+          <button
+            className="menubar-action-btn"
+            onClick={props.onClearAllOutputs}
+            title="Clear All Outputs"
+          >
+            <i className="bi bi-eraser" /> Clear
           </button>
           {props.onCloseNotebook && (
             <button

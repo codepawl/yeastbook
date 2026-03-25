@@ -1,224 +1,310 @@
-// src/kernel/transform.ts
+// AST-based cell code transformation using acorn-loose + magic-string
+// Replaces the previous regex-based approach for correctness.
 
-const STATEMENT_PREFIXES = [
-  "var ", "let ", "const ", "if ", "if(", "for ", "for(",
-  "while ", "while(", "do ", "do{", "class ", "function ",
-  "return ", "throw ", "try ", "try{", "switch ", "switch(",
-  "import ", "export ", "//", "/*",
-];
+import { parse } from "acorn-loose";
+import MagicString from "magic-string";
+import type * as ESTree from "estree";
 
-function isStatement(line: string): boolean {
-  const trimmed = line.trimStart();
-  if (STATEMENT_PREFIXES.some((p) => trimmed.startsWith(p))) return true;
-  // Bare block-closing: only `}` or `};` (no parens/brackets = not an expression)
-  // But `})`, `}))`, `}]);` etc. are expression continuations — not statements
-  const clean = trimmed.replace(/;$/, "").trim();
-  if (/^}+$/.test(clean)) return true;  // bare closing braces only
-  return false;
+type AcornNode = ESTree.Node & { start: number; end: number };
+type AcornProgram = ESTree.Program & { body: AcornNode[]; start: number; end: number };
+
+// ---------------------------------------------------------------------------
+// Binding name extraction (for destructuring patterns)
+// ---------------------------------------------------------------------------
+
+function extractBindingNames(pattern: AcornNode | null | undefined, names: string[]): void {
+  if (!pattern) return;
+  switch (pattern.type) {
+    case "Identifier":
+      names.push((pattern as ESTree.Identifier).name);
+      break;
+    case "ObjectPattern":
+      for (const prop of (pattern as ESTree.ObjectPattern).properties) {
+        if (prop.type === "RestElement") {
+          extractBindingNames(prop.argument as AcornNode, names);
+        } else {
+          extractBindingNames((prop as ESTree.Property).value as AcornNode, names);
+        }
+      }
+      break;
+    case "ArrayPattern":
+      for (const elem of (pattern as ESTree.ArrayPattern).elements) {
+        if (elem) extractBindingNames(elem as AcornNode, names);
+      }
+      break;
+    case "AssignmentPattern":
+      extractBindingNames((pattern as ESTree.AssignmentPattern).left as AcornNode, names);
+      break;
+    case "RestElement":
+      extractBindingNames((pattern as ESTree.RestElement).argument as AcornNode, names);
+      break;
+  }
 }
 
-/**
- * Transform static ESM imports to dynamic await import() for eval context.
- * Must run before const/let transformation since it produces const declarations.
- */
-export function transformImports(code: string): string {
-  const lines = code.split("\n");
-  const result: string[] = [];
+// ---------------------------------------------------------------------------
+// Import transformation
+// ---------------------------------------------------------------------------
 
-  for (let i = 0; i < lines.length; i++) {
-    const trimmed = lines[i]!.trimStart();
+function transformImportNode(s: MagicString, node: AcornNode): void {
+  const imp = node as unknown as ESTree.ImportDeclaration & { start: number; end: number };
+  const mod = (imp.source as ESTree.Literal).value as string;
+  const specs = imp.specifiers || [];
 
-    if (!trimmed.startsWith("import ")) {
-      result.push(lines[i]!);
-      continue;
-    }
-
-    // Collect full import statement (may span multiple lines with { })
-    let full = lines[i]!;
-    let j = i;
-    // Keep consuming lines if we haven't found both `from` and a closing quote
-    while (j < lines.length - 1) {
-      const hasSideEffect = /^import\s+["']/.test(full.trim());
-      const hasFrom = /from\s+["'][^"']+["']/.test(full);
-      if (hasSideEffect || hasFrom) break;
-      j++;
-      full += "\n" + lines[j]!;
-    }
-    i = j;
-
-    result.push(transformSingleImport(full.trim()));
+  if (specs.length === 0) {
+    // Side-effect: import "mod"
+    s.overwrite(imp.start, imp.end, `await import("${mod}")`);
+    return;
   }
 
-  return result.join("\n");
-}
+  // Classify specifiers
+  let defaultName: string | null = null;
+  let namespaceName: string | null = null;
+  const named: string[] = [];
 
-function transformSingleImport(stmt: string): string {
-  // Side effect import: import "module" or import 'module'
-  const sideEffect = stmt.match(/^import\s+["']([^"']+)["']\s*;?$/);
-  if (sideEffect) return `await import("${sideEffect[1]}")`;
-
-  // Extract module name from `from "..."` or `from '...'`
-  const moduleMatch = stmt.match(/from\s+["']([^"']+)["']/);
-  if (!moduleMatch) return stmt;
-  const mod = moduleMatch[1];
-
-  // Extract import clause (everything between "import" and "from")
-  const fromIdx = stmt.lastIndexOf(" from ");
-  if (fromIdx === -1) return stmt;
-  const clause = stmt.slice(stmt.indexOf("import") + 6, fromIdx).replace(/\n/g, " ").trim();
-  if (!clause) return stmt;
-
-  // Namespace: import * as name from "..."
-  const ns = clause.match(/^\*\s+as\s+(\w+)$/);
-  if (ns) return `const ${ns[1]} = await import("${mod}")`;
-
-  // Default only: import name from "..."
-  const def = clause.match(/^(\w+)$/);
-  if (def) return `const ${def[1]} = (await import("${mod}")).default`;
-
-  // Named only: import { a, b } from "..."
-  const named = clause.match(/^\{([^}]+)\}$/);
-  if (named) return `const {${named[1]!.replace(/\n/g, " ")}} = await import("${mod}")`;
-
-  // Default + named: import def, { a, b } from "..."
-  const defNamed = clause.match(/^(\w+)\s*,\s*\{([^}]+)\}$/);
-  if (defNamed) return `const { default: ${defNamed[1]}, ${defNamed[2]!.replace(/\n/g, " ").trim()} } = await import("${mod}")`;
-
-  // Default + namespace: import def, * as ns from "..."
-  const defNs = clause.match(/^(\w+)\s*,\s*\*\s+as\s+(\w+)$/);
-  if (defNs) return `const ${defNs[2]} = await import("${mod}"); const ${defNs[1]} = ${defNs[2]}.default`;
-
-  return stmt;
-}
-
-/**
- * Find the start index of a // line comment, ignoring // inside string literals.
- * Returns -1 if no line comment is found.
- */
-function findLineCommentStart(line: string): number {
-  let inString: string | null = null;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i]!;
-    if (inString) {
-      if (ch === "\\" ) { i++; continue; }
-      if (ch === inString) inString = null;
-    } else {
-      if (ch === '"' || ch === "'" || ch === "`") { inString = ch; continue; }
-      if (ch === "/" && line[i + 1] === "/") return i;
+  for (const spec of specs) {
+    if (spec.type === "ImportDefaultSpecifier") {
+      defaultName = spec.local.name;
+    } else if (spec.type === "ImportNamespaceSpecifier") {
+      namespaceName = spec.local.name;
+    } else if (spec.type === "ImportSpecifier") {
+      const imported = spec.imported.type === "Identifier" ? spec.imported.name : (spec.imported as ESTree.Literal).value;
+      if (imported === spec.local.name) {
+        named.push(spec.local.name);
+      } else {
+        named.push(`${imported} as ${spec.local.name}`);
+      }
     }
   }
-  return -1;
+
+  if (namespaceName && !defaultName) {
+    // import * as ns from "mod"
+    s.overwrite(imp.start, imp.end, `const ${namespaceName} = await import("${mod}")`);
+  } else if (defaultName && named.length === 0 && !namespaceName) {
+    // import foo from "mod"
+    s.overwrite(imp.start, imp.end, `const ${defaultName} = (await import("${mod}")).default`);
+  } else if (!defaultName && named.length > 0) {
+    // import { a, b } from "mod"
+    s.overwrite(imp.start, imp.end, `const { ${named.join(", ")} } = await import("${mod}")`);
+  } else if (defaultName && named.length > 0) {
+    // import def, { a, b } from "mod"
+    s.overwrite(imp.start, imp.end, `const { default: ${defaultName}, ${named.join(", ")} } = await import("${mod}")`);
+  } else if (defaultName && namespaceName) {
+    // import def, * as ns from "mod"
+    s.overwrite(imp.start, imp.end, `const ${namespaceName} = await import("${mod}"); const ${defaultName} = ${namespaceName}.default`);
+  }
 }
 
-/**
- * Transform cell code for notebook execution:
- * 1. Transform static ESM imports to dynamic await import()
- * 2. Convert top-level const/let to var (for cross-cell variable persistence)
- * 3. Hoist var declarations to globalThis
- * 4. Wrap in async IIFE (for top-level await support)
- * 5. Return last expression as result
- */
+// ---------------------------------------------------------------------------
+// Variable hoisting
+// ---------------------------------------------------------------------------
+
+function hoistVariableDeclaration(s: MagicString, node: AcornNode, code: string): void {
+  const decl = node as unknown as ESTree.VariableDeclaration & { start: number; end: number };
+  const kind = decl.kind; // const, let, var
+
+  // Convert const/let → var for cross-cell persistence
+  if (kind === "const" || kind === "let") {
+    s.overwrite(decl.start, decl.start + kind.length, "var");
+  }
+
+  for (const declarator of decl.declarations) {
+    const d = declarator as unknown as ESTree.VariableDeclarator & { start: number; end: number };
+    const id = d.id as AcornNode;
+
+    if (id.type === "Identifier" && d.init) {
+      // Simple: var x = expr  →  var x = globalThis.x = expr
+      const name = (id as ESTree.Identifier).name;
+      const initNode = d.init as AcornNode;
+      s.appendLeft(initNode.start, `globalThis.${name} = `);
+    } else if ((id.type === "ObjectPattern" || id.type === "ArrayPattern") && d.init) {
+      // Destructuring: var { a, b } = expr  →  var { a, b } = expr; globalThis.a = a; globalThis.b = b
+      const names: string[] = [];
+      extractBindingNames(id, names);
+      if (names.length > 0) {
+        const assignments = names.map(n => `globalThis.${n} = ${n}`).join("; ");
+        s.appendRight(d.end, `; ${assignments}`);
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Main transform
+// ---------------------------------------------------------------------------
+
 export function transformCellCode(code: string): string {
-  // Transform static imports first (produces const declarations that get handled below)
-  code = transformImports(code);
-  const lines = code.split("\n");
-  const transformed: string[] = [];
-  let braceDepth = 0;
-  let pendingFuncHoist: string | null = null;
+  if (!code.trim()) {
+    return "return (async () => {\n\n})()";
+  }
 
-  // Single pass: convert const/let → var and hoist to globalThis (top-level only)
-  // Note: brace depth tracking is a simple character counter that doesn't account for
-  // braces inside string literals, template literals, comments, or regex. This is a known
-  // limitation acceptable for typical notebook code.
-  for (let i = 0; i < lines.length; i++) {
-    let line = lines[i]!;
-    const trimmed = line.trimStart();
-    const indent = line.substring(0, line.length - trimmed.length);
+  const ast = parse(code, {
+    ecmaVersion: "latest" as any,
+    sourceType: "module",
+  }) as unknown as AcornProgram;
 
-    if (braceDepth === 0) {
-      // Strip top-level export keyword
-      if (trimmed.startsWith("export ")) {
-        const afterExport = trimmed.slice(7);
-        if (/^(const |let |var |function |class )/.test(afterExport)) {
-          line = indent + afterExport;
+  const s = new MagicString(code);
+  const body = ast.body;
+  let lastExprIdx = -1;
+
+  for (let i = 0; i < body.length; i++) {
+    const node = body[i]!;
+
+    switch (node.type) {
+      case "ImportDeclaration":
+        transformImportNode(s, node);
+        break;
+
+      case "ExportNamedDeclaration": {
+        const exp = node as unknown as ESTree.ExportNamedDeclaration & { start: number; end: number };
+        if (exp.declaration) {
+          // export const x = 1  →  strip "export " then handle declaration
+          const declNode = exp.declaration as AcornNode;
+          s.overwrite(node.start, declNode.start, "");
+          if (declNode.type === "VariableDeclaration") {
+            hoistVariableDeclaration(s, declNode, code);
+          } else if (declNode.type === "FunctionDeclaration") {
+            const name = (declNode as unknown as ESTree.FunctionDeclaration).id?.name;
+            if (name) {
+              s.appendRight(declNode.end, `\nglobalThis.${name} = ${name};`);
+            }
+          } else if (declNode.type === "ClassDeclaration") {
+            const name = (declNode as unknown as ESTree.ClassDeclaration).id?.name;
+            if (name) {
+              s.appendRight(declNode.end, `\nglobalThis.${name} = ${name};`);
+            }
+          }
         }
+        break;
       }
 
-      // Re-read trimmed/indent after potential export strip
-      const trimmed2 = line.trimStart();
-      const indent2 = line.substring(0, line.length - trimmed2.length);
+      case "VariableDeclaration":
+        hoistVariableDeclaration(s, node, code);
+        break;
 
-      // Convert top-level const/let → var
-      if (trimmed2.startsWith("const ")) {
-        line = indent2 + "var " + trimmed2.slice(6);
-      } else if (trimmed2.startsWith("let ")) {
-        line = indent2 + "var " + trimmed2.slice(4);
-      }
-
-      // Hoist top-level var declarations to globalThis for cross-cell persistence
-      const trimmedAfter = line.trimStart();
-      const indentAfter = line.substring(0, line.length - trimmedAfter.length);
-
-      const simpleMatch = trimmedAfter.match(/^var\s+(\w+)\s*=\s*(.+)$/);
-      if (simpleMatch) {
-        line = `${indentAfter}var ${simpleMatch[1]} = globalThis.${simpleMatch[1]} = ${simpleMatch[2]}`;
-      } else {
-        // Destructuring: var { a, b } = expr  OR  var [x, y] = expr
-        // Known limitation: nested destructuring ({ a: { b } }) is not supported.
-        const destructMatch = trimmedAfter.match(/^var\s+(\{[^}]+\}|\[[^\]]+\])\s*=\s*(.+)$/);
-        if (destructMatch) {
-          const pattern = destructMatch[1]!;
-          const expr = destructMatch[2]!;
-          const names = pattern.replace(/[{}\[\]\s\.]+/g, " ").trim().split(/\s*,\s*|\s+/).filter(n => /^\w+$/.test(n));
-          const assignments = names.map(n => `globalThis.${n} = ${n}`).join("; ");
-          line = `${indentAfter}var ${pattern} = ${expr}; ${assignments}`;
+      case "FunctionDeclaration": {
+        const name = (node as unknown as ESTree.FunctionDeclaration).id?.name;
+        if (name) {
+          s.appendRight(node.end, `\nglobalThis.${name} = ${name};`);
         }
+        break;
       }
 
-      // Mark top-level function declarations for globalThis hoisting
-      const funcMatch = trimmed2.match(/^function\s+([a-zA-Z_$]\w*)\s*\(/);
-      if (funcMatch) {
-        pendingFuncHoist = funcMatch[1]!;
+      case "ClassDeclaration": {
+        const name = (node as unknown as ESTree.ClassDeclaration).id?.name;
+        if (name) {
+          s.appendRight(node.end, `\nglobalThis.${name} = ${name};`);
+        }
+        break;
       }
-    }
 
-    transformed.push(line);
+      case "ExpressionStatement":
+        lastExprIdx = i;
+        break;
 
-    // Track brace depth — strip comments before counting to avoid braces in comments
-    const codeOnly = trimmed.replace(/\/\/.*$/, "").replace(/\/\*.*?\*\//g, "");
-    for (const ch of codeOnly) {
-      if (ch === "{") braceDepth++;
-      else if (ch === "}") braceDepth = Math.max(0, braceDepth - 1);
-    }
-
-    // When a function body closes, hoist it to globalThis
-    if (pendingFuncHoist && braceDepth === 0) {
-      transformed.push(`globalThis.${pendingFuncHoist} = ${pendingFuncHoist};`);
-      pendingFuncHoist = null;
+      // All other statements (if, for, while, try, etc.) — keep as-is
+      default:
+        break;
     }
   }
 
-  // Find last non-empty line and make it a return if it's an expression
-  let lastIdx = transformed.length - 1;
-  while (lastIdx >= 0 && !transformed[lastIdx]!.trim()) {
-    lastIdx--;
-  }
-  if (lastIdx >= 0) {
-    const lastLine = transformed[lastIdx]!;
-    const trimmedLast = lastLine.trimStart();
-    if (!isStatement(trimmedLast)) {
-      const leadingSpace = lastLine.substring(0, lastLine.length - trimmedLast.length);
-      const commentIdx = findLineCommentStart(trimmedLast);
-      if (commentIdx >= 0) {
-        const codePart = trimmedLast.slice(0, commentIdx).trimEnd().replace(/;$/, "");
-        const comment = trimmedLast.slice(commentIdx);
-        transformed[lastIdx] = leadingSpace + "return (" + codePart + ")  " + comment;
+  // Return last expression
+  if (lastExprIdx >= 0 && lastExprIdx === body.length - 1) {
+    const exprStmt = body[lastExprIdx]! as unknown as ESTree.ExpressionStatement & { start: number; end: number };
+    const expr = exprStmt.expression as AcornNode;
+    // Don't return assignment expressions (x = 1)
+    if (expr.type !== "AssignmentExpression" || code.slice(expr.start, expr.end).includes("==")) {
+      // Place return at the statement start (not expression start) to handle parens correctly
+      s.appendLeft(exprStmt.start, "return (");
+      // Remove trailing semicolon if present
+      const trailingCode = code.slice(expr.end, exprStmt.end).trim();
+      if (trailingCode === ";") {
+        s.overwrite(expr.end, exprStmt.end, ")");
       } else {
-        transformed[lastIdx] = leadingSpace + "return (" + trimmedLast.replace(/;$/, "") + ")";
+        s.appendRight(exprStmt.end, ")");
       }
     }
   }
 
   // Wrap in async IIFE
-  return "return (async () => {\n" + transformed.join("\n") + "\n})()";
+  s.prepend("return (async () => {\n");
+  s.append("\n})()");
+
+  return s.toString();
+}
+
+// ---------------------------------------------------------------------------
+// Extract new variable names from cell code (used for snapshot/context tracking)
+// ---------------------------------------------------------------------------
+
+export function extractNewVars(code: string): string[] {
+  if (!code.trim()) return [];
+
+  const ast = parse(code, {
+    ecmaVersion: "latest" as any,
+    sourceType: "module",
+  }) as unknown as AcornProgram;
+
+  const vars: string[] = [];
+
+  for (const node of ast.body) {
+    switch (node.type) {
+      case "VariableDeclaration":
+        for (const decl of (node as unknown as ESTree.VariableDeclaration).declarations) {
+          extractBindingNames(decl.id as AcornNode, vars);
+        }
+        break;
+      case "FunctionDeclaration": {
+        const name = (node as unknown as ESTree.FunctionDeclaration).id?.name;
+        if (name) vars.push(name);
+        break;
+      }
+      case "ClassDeclaration": {
+        const name = (node as unknown as ESTree.ClassDeclaration).id?.name;
+        if (name) vars.push(name);
+        break;
+      }
+      case "ImportDeclaration":
+        for (const spec of (node as unknown as ESTree.ImportDeclaration).specifiers || []) {
+          if (spec.local?.name) vars.push(spec.local.name);
+        }
+        break;
+      case "ExportNamedDeclaration": {
+        const exp = node as unknown as ESTree.ExportNamedDeclaration;
+        if (exp.declaration) {
+          if (exp.declaration.type === "VariableDeclaration") {
+            for (const decl of exp.declaration.declarations) {
+              extractBindingNames(decl.id as AcornNode, vars);
+            }
+          } else if (exp.declaration.type === "FunctionDeclaration" && exp.declaration.id?.name) {
+            vars.push(exp.declaration.id.name);
+          } else if (exp.declaration.type === "ClassDeclaration" && exp.declaration.id?.name) {
+            vars.push(exp.declaration.id.name);
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  return vars;
+}
+
+// Standalone import transformation (used by tests, preserves non-import code as-is)
+export function transformImports(code: string): string {
+  if (!code.trim()) return code;
+
+  const ast = parse(code, {
+    ecmaVersion: "latest" as any,
+    sourceType: "module",
+  }) as unknown as AcornProgram;
+
+  const s = new MagicString(code);
+
+  for (const node of ast.body) {
+    if (node.type === "ImportDeclaration") {
+      transformImportNode(s, node);
+    }
+  }
+
+  return s.toString();
 }

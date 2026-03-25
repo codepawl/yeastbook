@@ -7,7 +7,8 @@ export type MagicCommand =
   | { type: "time"; code: string }
   | { type: "sql_attach"; path: string; alias?: string }
   | { type: "sql_import"; path: string; table?: string }
-  | { type: "sql"; query: string; db?: string };
+  | { type: "sql"; query: string; db?: string }
+  | { type: "open"; filePath: string };
 
 export type CellMagic = { type: "python" };
 
@@ -63,6 +64,14 @@ export function parseMagicCommands(code: string): ParseResult {
       const modules = rest ? rest.split(/\s+/) : [];
       if (modules.length > 0) {
         magic.push({ type: "reload", modules });
+      }
+      continue;
+    }
+
+    if (trimmed.startsWith("%open ")) {
+      const filePath = trimmed.slice(6).trim().replace(/^["']|["']$/g, "");
+      if (filePath) {
+        magic.push({ type: "open", filePath });
       }
       continue;
     }

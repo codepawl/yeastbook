@@ -98,11 +98,24 @@ function ConfirmDialog({ message, onConfirm, onClose }: { message: string; onCon
   );
 }
 
+const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "avif", "ico"]);
+const MEDIA_EXTS = new Set(["mp4", "webm", "mov", "mp3", "wav", "ogg", "flac", "aac"]);
+const VIDEO_EXTS = new Set(["mp4", "webm", "mov", "avi", "mkv"]);
+
 function FilePreview({ path }: { path: string }) {
   const [content, setContent] = useState<string | null>(null);
   const [tooLarge, setTooLarge] = useState(false);
 
+  const ext = path.includes(".") ? path.split(".").pop()!.toLowerCase() : "";
+  const isImage = IMAGE_EXTS.has(ext);
+  const isMedia = MEDIA_EXTS.has(ext);
+  const isVideo = VIDEO_EXTS.has(ext);
+  const fileUrl = `/api/file?path=${encodeURIComponent(path)}`;
+
   useEffect(() => {
+    // Don't fetch content for binary files — use URL directly
+    if (isImage || isMedia) return;
+
     setContent(null);
     setTooLarge(false);
     fetch(`/api/files/read?path=${encodeURIComponent(path)}`)
@@ -112,14 +125,39 @@ function FilePreview({ path }: { path: string }) {
         setContent(data.content);
       })
       .catch(() => setContent(null));
-  }, [path]);
+  }, [path, isImage, isMedia]);
+
+  // Image preview via URL
+  if (isImage) {
+    return (
+      <div className="file-preview-content" style={{ padding: 8, textAlign: "center" }}>
+        <img src={fileUrl} alt={path} loading="lazy" style={{ maxWidth: "100%", maxHeight: 200, objectFit: "contain" }} />
+      </div>
+    );
+  }
+
+  // Video/audio preview via URL
+  if (isMedia) {
+    if (isVideo) {
+      return (
+        <div className="file-preview-content" style={{ padding: 8 }}>
+          <video controls preload="metadata" style={{ maxWidth: "100%", maxHeight: 200 }}>
+            <source src={fileUrl} />
+          </video>
+        </div>
+      );
+    }
+    return (
+      <div className="file-preview-content" style={{ padding: 8 }}>
+        <audio controls preload="metadata" src={fileUrl} style={{ width: "100%" }} />
+      </div>
+    );
+  }
 
   if (tooLarge) return <div className="file-preview-content"><em>File too large to preview</em></div>;
-  if (content === null) return <div className="file-preview-content"><em>Loading...</em></div>;
+  if (content === null) return <div className="file-preview-content"><span className="loading-inline"><img src="./favicon.png" className="loading-mascot-sm" alt="" /> Loading...</span></div>;
 
-  const ext = path.includes(".") ? "." + path.split(".").pop()!.toLowerCase() : "";
-
-  if (ext === ".csv") {
+  if (ext === "csv") {
     const lines = content.split("\n").filter(Boolean).slice(0, 21);
     const rows = lines.map((l) => l.split(","));
     return (
@@ -132,7 +170,7 @@ function FilePreview({ path }: { path: string }) {
     );
   }
 
-  if (ext === ".json") {
+  if (ext === "json") {
     try {
       const parsed = JSON.parse(content);
       return <pre className="file-preview-code">{JSON.stringify(parsed, null, 2).slice(0, 3000)}</pre>;
@@ -206,6 +244,7 @@ function Breadcrumbs({ currentPath, onNavigate }: { currentPath: string; onNavig
 
 export function FileExplorer({ onOpenNotebook, onClose, refreshTrigger }: Props) {
   const [items, setItems] = useState<FileNode[]>([]);
+  const [fileTreeLoading, setFileTreeLoading] = useState(true);
   const [currentPath, setCurrentPath] = useState("");
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [previewPath, setPreviewPath] = useState<string | null>(null);
@@ -226,10 +265,11 @@ export function FileExplorer({ onOpenNotebook, onClose, refreshTrigger }: Props)
   }, []);
 
   const fetchItems = useCallback((path: string) => {
+    setFileTreeLoading(true);
     fetch(`/api/files/list?path=${encodeURIComponent(path)}`)
       .then((r) => r.json())
-      .then((data) => setItems(data.items || []))
-      .catch(() => setItems([]));
+      .then((data) => { setItems(data.items || []); setFileTreeLoading(false); })
+      .catch(() => { setItems([]); setFileTreeLoading(false); });
   }, []);
 
   useEffect(() => { fetchItems(currentPath); }, [fetchItems, currentPath, refreshTrigger]);
@@ -385,7 +425,13 @@ export function FileExplorer({ onOpenNotebook, onClose, refreshTrigger }: Props)
       )}
 
       <div className="fe-list-container" ref={containerRef} tabIndex={0}>
-        {items.length > 0 ? items.map((node) => {
+        {fileTreeLoading && items.length === 0 ? (
+          <div className="skeleton-block">
+            {[75, 60, 85, 50, 70, 45].map((w, i) => (
+              <div key={i} className="skeleton-line" style={{ width: `${w}%` }} />
+            ))}
+          </div>
+        ) : items.length > 0 ? items.map((node) => {
           const isDir = node.type === "directory";
           const isSelected = selectedPath === node.path;
           const isRenaming = renaming === node.path;
