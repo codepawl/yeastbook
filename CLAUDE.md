@@ -55,10 +55,17 @@ All source imports use `@codepawl/yeastbook-core`. Workspace dependencies use `w
 
 ## Publishing
 
+Packages publish to the `@codepawl` npm org.
+
 ```bash
 npm login
 bun run publish:all  # builds UI + embeds assets + publishes core → ui → app
 ```
+
+## Dev Mode
+
+- `bun run dev` starts both UI watcher and server with `--watch`
+- `.yeastbook-dev-notebook` persists the chosen notebook path across `--watch` restarts (gitignored)
 
 ---
 
