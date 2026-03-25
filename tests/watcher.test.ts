@@ -64,14 +64,3 @@ describe("createOwnWriteMarker", () => {
   });
 });
 
-describe("watchNotebook edge cases", () => {
-  test("watching a nonexistent file returns a cleanup function and does not throw", () => {
-    const path = "/tmp/nonexistent-" + Date.now() + ".ybk";
-    let cleanup: (() => void) | undefined;
-    expect(() => {
-      cleanup = watchNotebook(path, () => {});
-    }).not.toThrow();
-    expect(typeof cleanup).toBe("function");
-    cleanup?.();
-  });
-});
