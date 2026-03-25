@@ -1,0 +1,3 @@
+# Transitive dep (pygments via pytest/IPython), low-severity local-only ReDoS in AdlLexer.
+# No upstream patch available. Monitor: https://github.com/pygments/pygments/issues/3058
+CVE-2026-4539
