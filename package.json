@@ -19,12 +19,14 @@
     "build:binary:windows": "bun build --compile --target=bun-windows-x64 packages/app/src/cli.ts --outfile binaries/yeastbook-windows.exe",
     "test": "bun test",
     "prepublish": "bun run build:ui && bun run build:embed",
-    "publish:all": "bun run prepublish && cd packages/core && npm publish && cd ../ui && npm publish && cd ../app && npm publish"
+    "publish:all": "bun run prepublish && cd packages/core && npm publish && cd ../ui && npm publish && cd ../app && npm publish",
+    "screenshots": "bun scripts/capture-screenshots.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",
     "@types/lodash": "^4.17.24",
     "@types/node": "^25.5.0",
+    "playwright": "^1.58.2",
     "sharp": "^0.34.5"
   },
   "peerDependencies": {
