@@ -1,6 +1,6 @@
 {
   "name": "@codepawl/yeastbook",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "bin": { "yeastbook": "./src/cli.ts" },
   "publishConfig": { "access": "public" },
   "files": ["src/", "package.json"],
