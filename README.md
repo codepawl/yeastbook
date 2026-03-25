@@ -20,7 +20,6 @@
 
 <p align="center">
   <img src="assets/demo-hero.png" alt="Yeastbook — notebook interface" width="800" />
-  <!-- TODO: Replace with actual screenshot of the notebook UI -->
 </p>
 
 ---
@@ -91,7 +90,6 @@ That's it. No Python, no conda, no kernel installs. Opens in your browser in und
 
 <p align="center">
   <img src="assets/demo-rich-output.png" alt="Rich output — charts, tables, and data visualization" width="700" />
-  <!-- TODO: Replace with actual screenshot showing chart + table + JSON output -->
 </p>
 
 ---
@@ -119,7 +117,6 @@ Search **"Yeastbook"** in VS Code Extensions, or install from the [Marketplace](
 
 <p align="center">
   <img src="assets/demo-vscode.png" alt="Yeastbook in VS Code" width="700" />
-  <!-- TODO: Replace with actual screenshot of VS Code with .ybk file open -->
 </p>
 
 ### System Check
@@ -175,7 +172,6 @@ Results render as interactive tables with sorting, filtering, and pagination.
 
 <p align="center">
   <img src="assets/demo-sql.png" alt="SQL cells with interactive table output" width="700" />
-  <!-- TODO: Replace with actual screenshot of SQL query + table result -->
 </p>
 
 ---
