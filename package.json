@@ -20,7 +20,8 @@
     "test": "bun test",
     "prepublish": "bun run build:ui && bun run build:embed",
     "publish:all": "bun run prepublish && cd packages/core && npm publish && cd ../ui && npm publish && cd ../app && npm publish",
-    "screenshots": "bun scripts/capture-screenshots.ts"
+    "screenshots": "bun scripts/capture-screenshots.ts",
+    "bump": "bun scripts/bump-version.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",
