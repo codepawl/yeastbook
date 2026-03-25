@@ -1,5 +1,6 @@
 import { test, expect, describe } from "bun:test";
 import { parseMagicCommands } from "../packages/core/src/magic.ts";
+import { detectMimeType, isTextMime } from "../packages/core/src/mime.ts";
 
 describe("parseMagicCommands", () => {
   test("parses single %install command", () => {
@@ -87,5 +88,74 @@ describe("parseMagicCommands", () => {
     expect(result.magic).toHaveLength(1);
     expect(result.magic[0]?.type).toBe("timeit");
     expect(result.cleanCode).toBe("const x = 42");
+  });
+
+  test("%open parses file path", () => {
+    const result = parseMagicCommands("%open ./data.csv");
+    expect(result.magic).toEqual([{ type: "open", filePath: "./data.csv" }]);
+    expect(result.cleanCode).toBe("");
+  });
+
+  test("%open strips quotes from path", () => {
+    const result = parseMagicCommands('%open "my file.png"');
+    expect(result.magic).toEqual([{ type: "open", filePath: "my file.png" }]);
+  });
+
+  test("%open with remaining code", () => {
+    const result = parseMagicCommands("%open ./image.png\nconsole.log('done')");
+    expect(result.magic).toHaveLength(1);
+    expect(result.magic[0]?.type).toBe("open");
+    expect(result.cleanCode).toBe("console.log('done')");
+  });
+});
+
+describe("detectMimeType", () => {
+  test("detects common image types", () => {
+    expect(detectMimeType("photo.png")).toBe("image/png");
+    expect(detectMimeType("photo.jpg")).toBe("image/jpeg");
+    expect(detectMimeType("icon.svg")).toBe("image/svg+xml");
+  });
+
+  test("detects video types", () => {
+    expect(detectMimeType("video.mp4")).toBe("video/mp4");
+    expect(detectMimeType("clip.webm")).toBe("video/webm");
+  });
+
+  test("detects data types", () => {
+    expect(detectMimeType("data.csv")).toBe("text/csv");
+    expect(detectMimeType("config.json")).toBe("application/json");
+    expect(detectMimeType("readme.md")).toBe("text/markdown");
+  });
+
+  test("detects code types", () => {
+    expect(detectMimeType("app.ts")).toBe("text/typescript");
+    expect(detectMimeType("script.py")).toBe("text/x-python");
+  });
+
+  test("falls back to octet-stream for unknown", () => {
+    expect(detectMimeType("file.xyz")).toBe("application/octet-stream");
+  });
+
+  test("uses fallback when provided", () => {
+    expect(detectMimeType("file.xyz", "text/plain")).toBe("text/plain");
+  });
+});
+
+describe("isTextMime", () => {
+  test("text/* is text", () => {
+    expect(isTextMime("text/plain")).toBe(true);
+    expect(isTextMime("text/csv")).toBe(true);
+    expect(isTextMime("text/typescript")).toBe(true);
+  });
+
+  test("json and xml are text", () => {
+    expect(isTextMime("application/json")).toBe(true);
+    expect(isTextMime("application/xml")).toBe(true);
+  });
+
+  test("binary types are not text", () => {
+    expect(isTextMime("image/png")).toBe(false);
+    expect(isTextMime("application/pdf")).toBe(false);
+    expect(isTextMime("application/octet-stream")).toBe(false);
   });
 });

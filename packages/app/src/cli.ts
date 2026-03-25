@@ -14,10 +14,161 @@ import { exportToScript, stripOutputs } from "./exporter.ts";
 import { templates } from "./templates.ts";
 import { parseFlags } from "./parse-flags.ts";
 import type { ParsedArgs } from "./parse-flags.ts";
+import { logger } from "./logger.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+let _isWSL: boolean | null = null;
+function isWSL(): boolean {
+  if (_isWSL !== null) return _isWSL;
+  try {
+    const version = require("fs").readFileSync("/proc/version", "utf8");
+    _isWSL = /microsoft/i.test(version);
+  } catch {
+    _isWSL = false;
+  }
+  return _isWSL;
+}
+
+function hasCommand(name: string): boolean {
+  try {
+    const result = Bun.spawnSync(["which", name], { stdout: "pipe", stderr: "pipe" });
+    return result.exitCode === 0;
+  } catch {
+    return false;
+  }
+}
+
+function openInWindows(url: string) {
+  // cmd.exe /c start needs empty title and quoted URL
+  Bun.spawn(["cmd.exe", "/c", "start", "", url], { stdout: "ignore", stderr: "ignore" });
+}
+
+function openInLinux(url: string): boolean {
+  for (const bin of ["xdg-open", "sensible-browser"]) {
+    try {
+      Bun.spawn([bin, url], { stdout: "ignore", stderr: "ignore" });
+      return true;
+    } catch {}
+  }
+  return false;
+}
+
+function openBrowser(url: string, target?: "windows" | "linux") {
+  try {
+    if (process.platform === "darwin") {
+      Bun.spawn(["open", url], { stdout: "ignore", stderr: "ignore" });
+      return;
+    }
+    if (process.platform === "win32") {
+      Bun.spawn(["cmd", "/c", "start", "", url], { stdout: "ignore", stderr: "ignore" });
+      return;
+    }
+    // Linux / WSL
+    if (isWSL()) {
+      if (target === "linux") {
+        if (!openInLinux(url)) logger.hint(`Open manually: ${url}`);
+      } else {
+        // Default to Windows browser on WSL (always available via cmd.exe)
+        openInWindows(url);
+      }
+    } else {
+      if (!openInLinux(url)) logger.hint(`Open manually: ${url}`);
+    }
+  } catch {
+    logger.hint(`Open manually: ${url}`);
+  }
+}
+
+async function getVersion(): Promise<string> {
+  try {
+    const pkg = await Bun.file(resolve(import.meta.dirname!, "../package.json")).json();
+    return pkg.version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+
+async function autoOpenBrowser(server: { port: number; getClientCount: () => number }, noOpen: boolean) {
+  if (noOpen) return;
+  const url = `http://localhost:${server.port}`;
+
+  // Wait briefly for an existing tab to reconnect
+  await Bun.sleep(800);
+
+  if (server.getClientCount() > 0) {
+    // Existing tab detected — ask user
+    logger.hint("Existing browser tab detected.");
+    if (process.stdin.isTTY) {
+      logger.hint("n  open new tab  \u00B7  Enter  keep existing");
+      // The keyboard handler will catch 'n' — set a flag
+      _pendingBrowserPrompt = url;
+    }
+  } else {
+    openBrowser(url);
+  }
+}
+
+let _pendingBrowserPrompt: string | null = null;
+
+function setupKeyboard(port: number, onQuit: () => void) {
+  if (!process.stdin.isTTY) return;
+  process.stdin.setRawMode(true);
+  process.stdin.resume();
+  process.stdin.setEncoding("utf8");
+
+  const url = `http://localhost:${port}`;
+  const wsl = isWSL();
+  const hasLinuxBrowser = wsl && (hasCommand("xdg-open") || hasCommand("sensible-browser"));
+  let waitingForBrowserChoice = false;
+
+  process.stdin.on("data", (key: string) => {
+    if (key === "\u0003" || key === "q" || key === "Q") {
+      onQuit();
+      return;
+    }
+
+    // Handle "existing tab detected" prompt
+    if (_pendingBrowserPrompt) {
+      const pendingUrl = _pendingBrowserPrompt;
+      _pendingBrowserPrompt = null;
+      if (key === "n" || key === "N") {
+        openBrowser(pendingUrl);
+        logger.success("Opening new tab...");
+      }
+      // Enter or any other key → keep existing tab
+      return;
+    }
+
+    // Handle WSL browser choice prompt
+    if (waitingForBrowserChoice) {
+      waitingForBrowserChoice = false;
+      if (key === "l" || key === "L") {
+        openBrowser(url, "linux");
+        logger.success("Opening in Linux browser...");
+      } else {
+        // Default to Windows (w, W, or any other key)
+        openBrowser(url, "windows");
+        logger.success("Opening in Windows browser...");
+      }
+      return;
+    }
+
+    if (key === "o" || key === "O") {
+      if (wsl && hasLinuxBrowser) {
+        // Both available — ask user
+        logger.hint("Open in:  w  Windows  ·  l  Linux");
+        waitingForBrowserChoice = true;
+      } else {
+        openBrowser(url);
+        logger.success("Opening browser...");
+      }
+      return;
+    }
+  });
+}
 
 async function checkWritePermission(): Promise<void> {
   const testFile = resolve(".yeastbook-write-test");
@@ -39,14 +190,14 @@ async function autoInstallDeps(notebookPath: string): Promise<void> {
     // Restore embedded package.json and bun.lock if no local package.json exists
     const localPkg = join(notebookDir, "package.json");
     if (!existsSync(localPkg) && notebook.metadata?.packageJson) {
-      console.log("\x1b[36m📋 Restoring embedded package.json from notebook...\x1b[0m");
+      logger.info("deps", "Restoring embedded package.json from notebook...");
       await Bun.write(localPkg, notebook.metadata.packageJson);
       if (notebook.metadata.bunLock) {
         await Bun.write(join(notebookDir, "bun.lock"), notebook.metadata.bunLock);
       }
       const proc = Bun.spawn(["bun", "install"], { cwd: notebookDir, stdout: "inherit", stderr: "inherit" });
       await proc.exited;
-      console.log("\x1b[32m✓ Dependencies restored from notebook\x1b[0m");
+      logger.success("Dependencies restored from notebook");
       return;
     }
 
@@ -64,13 +215,13 @@ async function autoInstallDeps(notebookPath: string): Promise<void> {
     }
 
     if (missing.length > 0) {
-      console.log(`\x1b[36m📦 Installing ${missing.length} missing dependencies...\x1b[0m`);
+      logger.info("deps", `Installing ${missing.length} missing dependencies...`);
       const proc = Bun.spawn(["bun", "add", ...missing], { stdout: "inherit", stderr: "inherit" });
       await proc.exited;
       if (proc.exitCode === 0) {
-        console.log(`\x1b[32m✓ Dependencies ready\x1b[0m`);
+        logger.success("Dependencies ready");
       } else {
-        console.error(`\x1b[33m⚠ Some dependencies failed to install\x1b[0m`);
+        logger.warn("Some dependencies failed to install");
       }
     }
   } catch {
@@ -277,7 +428,7 @@ if (process.argv.includes("--stdin")) {
   process.exit(0);
 }
 
-if (!command || command === "new") {
+if (!command || command === "new" || command === "serve") {
   const targetDir = dir ? resolve(dir) : process.cwd();
   if (dir) {
     await mkdir(targetDir, { recursive: true });
@@ -285,18 +436,20 @@ if (!command || command === "new") {
   await checkWritePermission();
 
   let filePath: string | null = null;
-  if (dev) {
+  if (command === "serve") {
+    // Serve mode: start server with no notebook (shows welcome/explorer)
+    filePath = null;
+  } else if (dev) {
     // In dev mode: reuse existing notebook, or start with no file (avoid creating junk files on --watch restart)
     const existing = await promptDevNotebook(targetDir);
     if (existing) {
       filePath = existing;
-      console.log(`Opening notebook: ${filePath}`);
     }
   } else {
     // Normal mode: always create a new notebook file
     const ext = ipynb ? ".ipynb" : ".ybk";
     filePath = resolve(targetDir, `notebook-${Date.now()}${ext}`);
-    console.log(`Creating new notebook: ${filePath}`);
+    // logged below in banner
   }
 
   if (!filePath && template) {
@@ -309,24 +462,39 @@ if (!command || command === "new") {
     const ext = ipynb ? ".ipynb" : ".ybk";
     filePath = resolve(targetDir, `notebook-${Date.now()}${ext}`);
     await Bun.write(filePath, JSON.stringify(tmpl, null, 2) + "\n");
-    console.log(`Using template: ${template}`);
+    // logged below in banner
   }
 
   if (filePath) await autoInstallDeps(filePath);
   const actualPort = await findFreePort(port);
+  const version = await getVersion();
   const server = await startServer(filePath, actualPort, dev);
-  console.log(`Yeastbook running at http://localhost:${server.port}`);
-  if (filePath) {
-    console.log(`Notebook: ${filePath}`);
+
+  logger.banner(version);
+  logger.info("server", `http://localhost:${server.port}`);
+  logger.info("notebook", filePath ? basename(filePath) : "new notebook");
+  logger.info("bun", Bun.version);
+  if (dev) logger.info("mode", "development");
+  logger.divider();
+  if (process.stdin.isTTY) {
+    logger.hint("o  open browser  \u00B7  q  quit");
   } else {
-    console.log(`Watching directory: ${targetDir}`);
+    logger.hint("press ctrl+c to quit");
   }
-  process.on("SIGINT", async () => {
-    console.log("\nShutting down yeastbook...");
+  console.log();
+
+  const gracefulShutdown = async () => {
+    console.log();
+    logger.success("Server stopped");
     server.stop();
     if (dev) try { await unlink(DEV_NOTEBOOK_FILE); } catch {}
     process.exit(0);
-  });
+  };
+
+  process.on("SIGINT", gracefulShutdown);
+  setupKeyboard(server.port, gracefulShutdown);
+
+  if (!dev) autoOpenBrowser(server as any, noOpen);
 } else if (command === "export") {
   const srcPath = resolve(positional[1] ?? "");
   if (!srcPath || !srcPath.endsWith(".ybk")) {
@@ -411,14 +579,14 @@ if (!command || command === "new") {
     console.log("No dependencies found in notebook.");
     process.exit(0);
   }
-  console.log(`\x1b[36m📦 Installing ${entries.length} dependencies...\x1b[0m`);
+  logger.info("deps", `Installing ${entries.length} dependencies...`);
   const pkgs = entries.map(([pkg, ver]) => `${pkg}@${ver}`);
   const proc = Bun.spawn(["bun", "add", ...pkgs], { stdout: "inherit", stderr: "inherit" });
   const code = await proc.exited;
   if (code === 0) {
-    console.log(`\x1b[32m✓ All dependencies installed\x1b[0m`);
+    logger.success("All dependencies installed");
   } else {
-    console.error(`\x1b[31m✗ Install failed (exit code ${code})\x1b[0m`);
+    logger.error(`Install failed (exit code ${code})`);
     process.exit(1);
   }
   process.exit(0);
@@ -466,26 +634,27 @@ if (!command || command === "new") {
   await diffNotebook(filePath, { staged, commit, otherFile });
   process.exit(0);
 } else if (command === "doctor") {
-  console.log("\x1b[1m🩺 Yeastbook Doctor\x1b[0m\n");
+  console.log();
+  logger.banner(await getVersion());
+  console.log("  Doctor\n");
 
   // Bun
   try {
-    const bunVer = Bun.version;
-    console.log(`\x1b[32m✓\x1b[0m Bun: v${bunVer}`);
+    logger.success(`Bun: v${Bun.version}`);
   } catch {
-    console.log("\x1b[31m✗\x1b[0m Bun: not found");
+    logger.error("Bun: not found");
   }
 
   // Python
   try {
     const pyProc = Bun.spawnSync(["python3", "--version"]);
     if (pyProc.exitCode === 0) {
-      console.log(`\x1b[32m✓\x1b[0m Python: ${pyProc.stdout.toString().trim()}`);
+      logger.success(`Python: ${pyProc.stdout.toString().trim()}`);
     } else {
-      console.log("\x1b[33m!\x1b[0m Python: not found (optional, needed for Python cells)");
+      logger.warn("Python: not found (optional, needed for Python cells)");
     }
   } catch {
-    console.log("\x1b[33m!\x1b[0m Python: not found (optional, needed for Python cells)");
+    logger.warn("Python: not found (optional, needed for Python cells)");
   }
 
   // Venv
@@ -493,45 +662,45 @@ if (!command || command === "new") {
   if (existsSync(venvPath)) {
     const isWindows = process.platform === "win32";
     const pyBin = join(venvPath, isWindows ? "Scripts" : "bin", isWindows ? "python.exe" : "python3");
-    console.log(`\x1b[32m✓\x1b[0m Venv: ${venvPath}${existsSync(pyBin) ? ` (${pyBin})` : " (missing python binary)"}`);
+    logger.success(`Venv: ${venvPath}${existsSync(pyBin) ? ` (${pyBin})` : " (missing python binary)"}`);
   } else {
-    console.log("\x1b[33m!\x1b[0m Venv: not found (create with: python3 -m venv .venv)");
+    logger.warn("Venv: not found (create with: python3 -m venv .venv)");
   }
 
   // AI/ML Libraries
-  console.log("\n\x1b[1mPython Libraries:\x1b[0m");
+  console.log("\n  Python Libraries:");
   const aiLibs = ["torch", "numpy", "matplotlib", "stable_worldmodel"];
   for (const lib of aiLibs) {
     try {
       const proc = Bun.spawnSync(["python3", "-c", `import ${lib}; print(getattr(${lib}, '__version__', 'installed'))`]);
       if (proc.exitCode === 0) {
-        console.log(`  \x1b[32m✓\x1b[0m ${lib}: ${proc.stdout.toString().trim()}`);
+        logger.success(`${lib}: ${proc.stdout.toString().trim()}`);
       } else {
-        console.log(`  \x1b[33m!\x1b[0m ${lib}: not installed`);
+        logger.warn(`${lib}: not installed`);
       }
     } catch {
-      console.log(`  \x1b[33m!\x1b[0m ${lib}: not installed`);
+      logger.warn(`${lib}: not installed`);
     }
   }
 
   // Port check
-  console.log("\n\x1b[1mSystem:\x1b[0m");
+  console.log("\n  System:");
   try {
     const testPort = await findFreePort(3000);
-    console.log(`  \x1b[32m✓\x1b[0m Port: ${testPort} available`);
+    logger.success(`Port: ${testPort} available`);
   } catch {
-    console.log(`  \x1b[31m✗\x1b[0m Port: no free port found (3000-3009)`);
+    logger.error("Port: no free port found (3000-3009)");
   }
 
   // Write permission
   try {
     await checkWritePermission();
-    console.log(`  \x1b[32m✓\x1b[0m Write: current directory writable`);
+    logger.success("Write: current directory writable");
   } catch {
-    console.log(`  \x1b[31m✗\x1b[0m Write: no write permission in current directory`);
+    logger.error("Write: no write permission in current directory");
   }
 
-  console.log("");
+  console.log();
   process.exit(0);
 
 } else if (command === "init") {
@@ -539,7 +708,8 @@ if (!command || command === "new") {
   const absDir = resolve(dir);
   const dirName = basename(absDir);
 
-  console.log(`\x1b[1m📦 Initializing Yeastbook project: ${dirName}\x1b[0m\n`);
+  logger.banner(await getVersion());
+  logger.info("init", dirName);
 
   // 1. Create directory
   await mkdir(absDir, { recursive: true });
@@ -551,7 +721,7 @@ if (!command || command === "new") {
       stdout: "inherit", stderr: "inherit",
     });
     await venvProc.exited;
-    console.log("\x1b[32m✓\x1b[0m .venv created");
+    logger.success(".venv created");
 
     // 3. Install base packages
     const isWindows = process.platform === "win32";
@@ -561,9 +731,9 @@ if (!command || command === "new") {
       stdout: "inherit", stderr: "inherit",
     });
     await pipProc.exited;
-    console.log("\x1b[32m✓\x1b[0m Python packages installed");
+    logger.success("Python packages installed");
   } catch {
-    console.log("\x1b[33m!\x1b[0m Python not found — skipping venv setup");
+    logger.warn("Python not found — skipping venv setup");
   }
 
   // 4. Create demo notebook
@@ -577,17 +747,21 @@ if (!command || command === "new") {
       { id: "py-demo", type: "code", source: `import numpy as np\nimport matplotlib.pyplot as plt\n\nx = np.linspace(0, 2 * np.pi, 100)\nplt.figure(figsize=(8, 4))\nplt.plot(x, np.sin(x), label="sin")\nplt.plot(x, np.cos(x), label="cos")\nplt.legend()\nplt.title("Trigonometry")`, metadata: { language: "python" } },
     ];
     await Bun.write(demoPath, JSON.stringify(demo, null, 2));
-    console.log("\x1b[32m✓\x1b[0m demo.ybk created");
+    logger.success("demo.ybk created");
   }
 
   // 5. Create .gitignore
   const gitignorePath = join(absDir, ".gitignore");
   if (!existsSync(gitignorePath)) {
     await Bun.write(gitignorePath, ".venv/\nnode_modules/\n*.lock\n");
-    console.log("\x1b[32m✓\x1b[0m .gitignore created");
+    logger.success(".gitignore created");
   }
 
-  console.log(`\n\x1b[32mDone!\x1b[0m Run:\n  cd ${dir}\n  yeastbook demo.ybk\n`);
+  console.log();
+  logger.success("Done!");
+  logger.hint(`cd ${dir}`);
+  logger.hint("yeastbook demo.ybk");
+  console.log();
   process.exit(0);
 
 } else if (command === "diff-text") {
@@ -604,12 +778,30 @@ if (!command || command === "new") {
   const filePath = resolve(command);
   await autoInstallDeps(filePath);
   const actualPort = await findFreePort(port);
+  const version = await getVersion();
   const server = await startServer(filePath, actualPort, dev);
-  console.log(`Yeastbook running at http://localhost:${server.port}`);
-  console.log(`Notebook: ${filePath}`);
-  process.on("SIGINT", () => {
-    console.log("\nShutting down yeastbook...");
+
+  logger.banner(version);
+  logger.info("server", `http://localhost:${server.port}`);
+  logger.info("notebook", basename(filePath));
+  logger.info("bun", Bun.version);
+  logger.divider();
+  if (process.stdin.isTTY) {
+    logger.hint("o  open browser  \u00B7  q  quit");
+  } else {
+    logger.hint("press ctrl+c to quit");
+  }
+  console.log();
+
+  const gracefulShutdown = () => {
+    console.log();
+    logger.success("Server stopped");
     server.stop();
     process.exit(0);
-  });
+  };
+
+  process.on("SIGINT", gracefulShutdown);
+  setupKeyboard(server.port, gracefulShutdown);
+
+  autoOpenBrowser(server as any, noOpen);
 }

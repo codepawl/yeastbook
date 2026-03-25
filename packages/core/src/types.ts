@@ -6,7 +6,8 @@ export type RichOutput =
   | { type: "html"; html: string }
   | { type: "plugin"; pluginType: string; data: Record<string, unknown> }
   | { type: "mime"; mime: string; data?: string; url?: string }
-  | { type: "widget"; widgetId: string; widgetType: string; value: unknown; config: Record<string, unknown> };
+  | { type: "widget"; widgetId: string; widgetType: string; value: unknown; config: Record<string, unknown> }
+  | { type: "file"; path: string; name: string; mimeType: string; size: number; content?: string; streamUrl?: string; mode: "embedded" | "stream" };
 
 export interface CellOutput {
   output_type: string;

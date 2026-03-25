@@ -28,6 +28,6 @@ export function PluginRenderer({ pluginType, data }: Props) {
   }, [pluginType]);
 
   if (error) return <div className="output-error">{error}</div>;
-  if (!Comp) return <div className="output-result" style={{ color: "var(--text-muted)" }}>Loading...</div>;
+  if (!Comp) return <div className="output-result"><span className="loading-inline"><img src="./favicon.png" className="loading-mascot-sm" alt="" /> Loading...</span></div>;
   return <Comp data={data} />;
 }

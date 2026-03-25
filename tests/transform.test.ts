@@ -1,5 +1,5 @@
 import { test, expect, describe } from "bun:test";
-import { transformCellCode, transformImports } from "../packages/core/src/transform.ts";
+import { transformCellCode, transformImports, extractNewVars } from "../packages/core/src/transform.ts";
 import { executeCode } from "../packages/app/src/kernel/execute.ts";
 
 describe("transformCellCode", () => {
@@ -205,6 +205,41 @@ describe("transformImports", () => {
   });
 });
 
+describe("multi-line expression return", () => {
+  test("returns multi-line .map() with object literal", () => {
+    const code = `const dataset = { X: [[1,2], [3,4]], y: [10, 20] }
+dataset.X.slice(0, 2).map((x, i) => ({
+  features: x,
+  price: dataset.y[i]
+}))`;
+    const result = transformCellCode(code);
+    expect(result).toContain("return (dataset.X.slice(0, 2).map((x, i) => ({");
+    expect(result).toContain("}))");
+    expect(result).not.toContain("return (}))");
+  });
+
+  test("returns multi-line array literal", () => {
+    const code = `const x = 1;
+[
+  x,
+  x + 1
+]`;
+    const result = transformCellCode(code);
+    expect(result).toContain("return (");
+    expect(result).toContain("]");
+  });
+
+  test("returns multi-line chained calls", () => {
+    const code = `const arr = [1,2,3]
+arr
+  .filter(x => x > 1)
+  .map(x => x * 2)`;
+    const result = transformCellCode(code);
+    expect(result).toContain("return (arr");
+    expect(result).toContain(".map(x => x * 2))");
+  });
+});
+
 describe("transformCellCode edge cases", () => {
   test("comment-only code does not get a bare return", () => {
     const result = transformCellCode("// just a comment");
@@ -233,6 +268,55 @@ describe("transformCellCode edge cases", () => {
     expect(() => transformCellCode("")).not.toThrow();
     const result = transformCellCode("");
     expect(result).toContain("(async () => {");
+  });
+});
+
+describe("AST edge cases", () => {
+  test("handles comments with curly braces", () => {
+    const code = `const x = 1\n// Expected: { version: "0.0.1", cool: true }\nconsole.log(x)`;
+    const vars = extractNewVars(code);
+    expect(vars).toContain("x");
+    expect(() => transformCellCode(code)).not.toThrow();
+  });
+
+  test("handles strings with import/const keywords", () => {
+    const code = 'const msg = "import something from somewhere"';
+    const vars = extractNewVars(code);
+    expect(vars).toEqual(["msg"]);
+    expect(transformCellCode(code)).not.toContain("await import(");
+  });
+
+  test("handles template literals with nested braces", () => {
+    const code = 'const html = `<div>${{a:1}.a}</div>`';
+    const vars = extractNewVars(code);
+    expect(vars).toEqual(["html"]);
+  });
+
+  test("extracts destructured variable names", () => {
+    const code = `const { a, b: c, ...rest } = obj`;
+    const vars = extractNewVars(code);
+    expect(vars).toContain("a");
+    expect(vars).toContain("c");
+    expect(vars).toContain("rest");
+    expect(vars).not.toContain("b");
+  });
+
+  test("extracts array destructured names", () => {
+    const code = `const [x, , y, ...z] = arr`;
+    const vars = extractNewVars(code);
+    expect(vars).toContain("x");
+    expect(vars).toContain("y");
+    expect(vars).toContain("z");
+  });
+
+  test("handles incomplete code gracefully", () => {
+    expect(() => transformCellCode("const x = ")).not.toThrow();
+  });
+
+  test("handles block comments with code-like content", () => {
+    const code = `/*\n  const hidden = "nope"\n  import fake from "nowhere"\n*/\nconst real = 42`;
+    const vars = extractNewVars(code);
+    expect(vars).toEqual(["real"]);
   });
 });
 

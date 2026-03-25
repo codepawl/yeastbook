@@ -77,8 +77,12 @@ export function LeftSidebar({
       setExpanded(true);
       localStorage.setItem("yeastbook-sidebar-expanded", "true");
       localStorage.setItem("yeastbook-sidebar-tab", "files");
-      setGlowing(true);
-      setTimeout(() => setGlowing(false), 1500);
+      // Reset glow to re-trigger animation even if already open
+      setGlowing(false);
+      requestAnimationFrame(() => {
+        setGlowing(true);
+        setTimeout(() => setGlowing(false), 1500);
+      });
     };
     window.addEventListener("yeastbook-open-files", openFilesHandler);
 

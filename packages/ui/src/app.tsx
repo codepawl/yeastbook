@@ -551,6 +551,9 @@ export function App() {
     setTimeout(() => {
       const el = document.querySelector(`#cell-${targetCellId} .monaco-editor`) as HTMLElement;
       el?.querySelector("textarea")?.focus();
+      // Re-scroll after output may have rendered and shifted layout
+      const cellEl = document.getElementById(`cell-${targetCellId}`);
+      cellEl?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }, 50);
   }, []);
 
@@ -674,6 +677,34 @@ export function App() {
     setSaved(true);
   }, []);
 
+  const handleFileDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length === 0) return;
+
+    for (const file of files) {
+      // Upload file to notebook directory
+      const destPath = `./${file.name}`;
+      await fetch("/api/upload", {
+        method: "POST",
+        body: file,
+        headers: { "X-File-Path": destPath },
+      });
+
+      // Insert a code cell with %open
+      const res = await fetch("/api/cells", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "code", source: `%open ${destPath}` }),
+      });
+      const { id } = await res.json();
+      const cell: Cell = { id, cell_type: "code", source: [`%open ${destPath}`], outputs: [], execution_count: null, metadata: {} };
+      setCells((prev) => [...prev, cell]);
+    }
+    showToast(`Uploaded ${files.length} file${files.length > 1 ? "s" : ""}`);
+    setFileTreeVersion((v) => v + 1);
+  }, [showToast]);
+
   const handleMoveCell = useCallback(async (cellId: string, direction: "up" | "down") => {
     const idx = cellsRef.current.findIndex((c) => c.id === cellId);
     const target = direction === "up" ? idx - 1 : idx + 1;
@@ -736,6 +767,14 @@ export function App() {
     setLiveOutputs(new Map());
     setBusyCells(new Set());
     setVariables({});
+  }, []);
+
+  const handleClearAllOutputs = useCallback(() => {
+    setCells((prev) =>
+      prev.map((c) => ({ ...c, outputs: [], execution_count: null }))
+    );
+    setLiveOutputs(new Map());
+    setExecTiming(new Map());
   }, []);
 
   const runCellSequence = useCallback(async (codeCells: Cell[]) => {
@@ -1000,6 +1039,18 @@ export function App() {
   const handleModeChange = useCallback((newMode: Mode) => {
     setMode(newMode);
   }, []);
+
+  // --- Auto-scroll focused cell into view ---
+  useEffect(() => {
+    if (!focusedCellId) return;
+    // Use requestAnimationFrame to ensure DOM has updated after state change
+    requestAnimationFrame(() => {
+      const cellEl = document.getElementById(`cell-${focusedCellId}`);
+      if (cellEl) {
+        cellEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+    });
+  }, [focusedCellId]);
 
   // --- Track focused cell ---
   useEffect(() => {
@@ -1301,6 +1352,7 @@ export function App() {
             onInterrupt={handleInterrupt}
             onRestart={handleRestart}
             onRestartAndRunAll={handleRestartAndRunAll}
+            onClearAllOutputs={handleClearAllOutputs}
             onToggleDarkMode={toggleTheme}
             onTogglePresentation={togglePresentation}
             onFontSizeIncrease={handleFontSizeIncrease}
@@ -1322,6 +1374,7 @@ export function App() {
             performanceMode={performanceMode}
             onTogglePerfMode={() => handleUpdateSettings({ ...settings, execution: { ...settings.execution, performanceMode: !performanceMode } })}
             showToast={showToast}
+            onFocusCell={(cellId) => setFocusedCellId(cellId)}
           />
         </>
       )}
@@ -1337,7 +1390,15 @@ export function App() {
       <ShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} version={version} bunVersion={bunVersion} />
       <Profiler id="notebook" onRender={perfMetrics.onProfilerRender}>
+      {notebookLoading ? (
       <div className="notebook-layout">
+        <div className="notebook-loading-full">
+          <div className="loading-mascot" />
+          <p>Loading notebook...</p>
+        </div>
+      </div>
+      ) : (
+      <div className="notebook-layout" onDrop={handleFileDrop} onDragOver={(e) => e.preventDefault()}>
       {!isPresenting && (
         <LeftSidebar
           cells={cells}
@@ -1360,12 +1421,6 @@ export function App() {
         editorRefs={editorRefsMap}
         onSourceChange={handleSourceChange}
       />
-      {notebookLoading && (
-        <div className="notebook-loading">
-          <div className="loading-bar" />
-          <p>Loading notebook...</p>
-        </div>
-      )}
       {!notebookLoading && filePath === null ? (
         <WelcomeScreen
           onNewNotebook={handleNewNotebook}
@@ -1412,6 +1467,7 @@ export function App() {
       />
       )}
       </div>
+      )}
       </Profiler>
       {toast && settings.appearance.notifications === "show" && (
         <div className="toast">

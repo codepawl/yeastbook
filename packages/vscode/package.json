@@ -31,7 +31,11 @@
     "languages": [{
       "id": "yeastbook",
       "aliases": ["Yeastbook"],
-      "extensions": [".ybk"]
+      "extensions": [".ybk"],
+      "icon": {
+        "light": "./icon-small.png",
+        "dark": "./icon-small.png"
+      }
     }],
     "commands": [
       { "command": "yeastbook.runAll", "title": "Yeastbook: Run All Cells", "icon": "$(run-all)" },
